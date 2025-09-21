@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>迈克尔逊干涉仪完整模拟实验</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563EB',
+                        m1: '#10B981',    // M1镜颜色（绿色）
+                        m2: '#7C3AED',    // M2镜颜色（紫色）
+                        dark: '#1E293B',
+                        light: '#F8FAFC'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .shadow-soft {
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            }
+            .transition-all-300 {
+                transition: all 300ms ease-in-out;
+            }
+            .slider-thumb::-webkit-slider-thumb {
+                @apply appearance-none w-5 h-5 rounded-full cursor-pointer;
+            }
+            .slider-m1::-webkit-slider-thumb {
+                @apply bg-m1;
+            }
+            .slider-m2::-webkit-slider-thumb {
+                @apply bg-m2;
+            }
+            .slider-general::-webkit-slider-thumb {
+                @apply bg-primary;
+            }
+            .slider-thumb::-moz-range-thumb {
+                @apply w-5 h-5 rounded-full cursor-pointer border-none;
+            }
+            .canvas-container {
+                position: relative;
+                overflow: hidden;
+                border-radius: 0.5rem;
+            }
+            .experiment-step {
+                @apply p-4 border-l-4 rounded-r-md mb-3 transition-all-300;
+            }
+            .experiment-step.active {
+                @apply border-primary bg-primary/5;
+            }
+            .experiment-step:not(.active) {
+                @apply border-gray-200 hover:border-gray-300;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-dark font-sans min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- 标题区域 -->
+        <header class="mb-8 text-center">
+            <h1 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold text-primary mb-3">迈克尔逊干涉仪模拟实验</h1>
+            <p class="text-gray-600 max-w-3xl mx-auto">
+                完整模拟迈克尔逊干涉仪实验，可进行等倾干涉和等厚干涉观察，
+                并能完成波长测量、微小长度测量等典型实验任务
+            </p>
+        </header>
+        
+        <!-- 实验状态指示 -->
+        <div class="bg-white rounded-xl p-4 shadow-soft mb-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="text-sm text-gray-600 flex items-center">
+                    <i class="fa fa-flask text-primary mr-2 text-lg"></i>
+                    <span>当前实验：</span>
+                    <span class="font-medium text-primary ml-1" id="currentExperiment">观察等倾干涉现象</span>
+                </div>
+                <div class="text-sm text-gray-600 flex items-center">
+                    <i class="fa fa-info-circle text-primary mr-1"></i>
+                    <span>干涉模式：</span>
+                    <span class="font-medium text-primary ml-1" id="currentModeText">等倾干涉（同心圆条纹）</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主要内容区域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- 左侧控制面板 -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- 实验步骤导航 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-4 flex items-center">
+                        <i class="fa fa-list-ol text-primary mr-2"></i>实验步骤
+                    </h2>
+                    
+                    <div class="space-y-1" id="experimentSteps">
+                        <div class="experiment-step active" data-step="1">
+                            <div class="font-medium">1. 观察等倾干涉现象</div>
+                            <div class="text-sm text-gray-600 mt-1">调整两镜平行，观察同心圆条纹</div>
+                        </div>
+                        <div class="experiment-step" data-step="2">
+                            <div class="font-medium">2. 观察等厚干涉现象</div>
+                            <div class="text-sm text-gray-600 mt-1">使两镜形成夹角，观察平行条纹</div>
+                        </div>
+                        <div class="experiment-step" data-step="3">
+                            <div class="font-medium">3. 测量光波长</div>
+                            <div class="text-sm text-gray-600 mt-1">通过条纹移动计算波长</div>
+                        </div>
+                        <div class="experiment-step" data-step="4">
+                            <div class="font-medium">4. 测量微小长度</div>
+                            <div class="text-sm text-gray-600 mt-1">利用条纹变化测量微小位移</div>
+                        </div>
+                    </div>
+                    
+                    <button id="showHelp" class="w-full mt-4 bg-blue-50 hover:bg-blue-100 text-primary py-2 px-3 rounded-lg text-sm transition-all-300 flex items-center justify-center">
+                        <i class="fa fa-question-circle mr-2"></i>实验指导
+                    </button>
+                </div>
+                
+                <!-- 光源参数 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-5 flex items-center">
+                        <i class="fa fa-lightbulb-o text-yellow-500 mr-2"></i>光源参数
+                    </h2>
+                    
+                    <div class="space-y-6">
+                        <!-- 光源波长控制 -->
+                        <div class="parameter-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                光源波长 (λ)
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="range" id="wavelength" min="400" max="700" step="10" value="550"
+                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb slider-general">
+                                <span id="wavelengthValue" class="text-primary font-medium min-w-[60px]">550 nm</span>
+                            </div>
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>紫色 (400 nm)</span>
+                                <span>红色 (700 nm)</span>
+                            </div>
+                            <div class="mt-2 h-4 w-full rounded-full" id="lightColor" style="background-color: #ffd700;"></div>
+                        </div>
+                        
+                        <!-- 光强度控制 -->
+                        <div class="parameter-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                光强度
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="range" id="intensity" min="0.3" max="1" step="0.1" value="0.9"
+                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb slider-general">
+                                <span id="intensityValue" class="text-primary font-medium min-w-[60px]">90%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 中间控制和数据区域 -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- M1反射镜控制 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-5 flex items-center">
+                        <i class="fa fa-arrows text-m1 mr-2"></i>反射镜 M1 调节
+                    </h2>
+                    
+                    <div class="space-y-6">
+                        <!-- M1位置控制 -->
+                        <div class="parameter-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                M1 位置 (影响光程差)
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="range" id="m1Position" min="-1000" max="1000" step="20" value="0"
+                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb slider-m1">
+                                <span id="m1PositionValue" class="text-m1 font-medium min-w-[60px]">0 nm</span>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
+                                <i class="fa fa-info-circle text-m1 mr-1"></i>
+                                改变位置会导致条纹收缩/扩展或移动
+                            </div>
+                        </div>
+                        
+                        <!-- M1倾斜度控制 -->
+                        <div class="parameter-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                M1 倾斜度
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="range" id="m1Tilt" min="-15" max="15" step="1" value="0"
+                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb slider-m1">
+                                <span id="m1TiltValue" class="text-m1 font-medium min-w-[60px]">0°</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- M2反射镜控制 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-5 flex items-center">
+                        <i class="fa fa-arrows text-m2 mr-2"></i>反射镜 M2 调节
+                    </h2>
+                    
+                    <div class="space-y-6">
+                        <!-- M2位置控制 -->
+                        <div class="parameter-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                M2 位置 (影响光程差)
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="range" id="m2Position" min="-1000" max="1000" step="20" value="0"
+                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb slider-m2">
+                                <span id="m2PositionValue" class="text-m2 font-medium min-w-[60px]">0 nm</span>
+                            </div>
+                        </div>
+                        
+                        <!-- M2倾斜度控制 -->
+                        <div class="parameter-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                M2 倾斜度
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="range" id="m2Tilt" min="-15" max="15" step="1" value="0"
+                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb slider-m2">
+                                <span id="m2TiltValue" class="text-m2 font-medium min-w-[60px]">0°</span>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
+                                <i class="fa fa-info-circle text-m2 mr-1"></i>
+                                与M1倾斜度不同时产生等厚干涉
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 实验控制与数据 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-4 flex items-center">
+                        <i class="fa fa-calculator text-primary mr-2"></i>实验控制
+                    </h2>
+                    
+                    <div class="space-y-3">
+                        <button id="resetParameters" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg text-sm transition-all-300 flex items-center justify-center">
+                            <i class="fa fa-refresh mr-2"></i>重置实验
+                        </button>
+                        <button id="setEqualInclination" class="w-full bg-primary/10 hover:bg-primary/20 text-primary py-2 px-3 rounded-lg text-sm transition-all-300 flex items-center justify-center">
+                            <i class="fa fa-circle-o mr-2"></i>设置等倾干涉
+                        </button>
+                        <button id="setEqualThickness" class="w-full bg-primary/10 hover:bg-primary/20 text-primary py-2 px-3 rounded-lg text-sm transition-all-300 flex items-center justify-center">
+                            <i class="fa fa-minus mr-2"></i>设置等厚干涉
+                        </button>
+                    </div>
+                    
+                    <div class="mt-5 pt-4 border-t border-gray-100">
+                        <h3 class="font-medium mb-3">实验数据记录</h3>
+                        
+                        <div class="space-y-4 text-sm">
+                            <div>
+                                <div class="text-gray-600">条纹移动计数</div>
+                                <div class="flex items-center mt-1">
+                                    <button id="decrementCount" class="bg-gray-100 hover:bg-gray-200 w-7 h-7 rounded-l flex items-center justify-center">
+                                        <i class="fa fa-minus text-xs"></i>
+                                    </button>
+                                    <input type="number" id="fringeCount" value="0" min="0" 
+                                        class="w-full border-y border-gray-200 text-center py-1">
+                                    <button id="incrementCount" class="bg-gray-100 hover:bg-gray-200 w-7 h-7 rounded-r flex items-center justify-center">
+                                        <i class="fa fa-plus text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <div class="text-gray-600">计算结果</div>
+                                <div id="calculationResult" class="bg-gray-50 p-2 rounded text-center mt-1 font-medium text-primary">
+                                    --
+                                </div>
+                            </div>
+                            
+                            <button id="calculate" class="w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-lg text-sm transition-all-300">
+                                计算结果
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 右侧演示区域 -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- 装置示意图 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-4 flex items-center">
+                        <i class="fa fa-sitemap text-primary mr-2"></i>迈克尔逊干涉仪装置示意图
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- 主装置图 -->
+                        <div class="canvas-container bg-gray-50 p-2">
+                            <canvas id="michelsonSetupCanvas" class="w-full h-[300px]"></canvas>
+                        </div>
+                        
+                        <!-- 装置说明 -->
+                        <div class="space-y-4">
+                            <div class="bg-blue-50 p-4 rounded-lg">
+                                <h3 class="font-medium text-primary mb-2 flex items-center">
+                                    <i class="fa fa-info-circle mr-2"></i>装置组成
+                                </h3>
+                                <ul class="space-y-2 text-sm text-gray-700">
+                                    <li class="flex items-start">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-yellow-500 mt-1.5 mr-2"></span>
+                                        <span><strong>光源</strong>：发出单色平行光</span>
+                                    </li>
+                                    <li class="flex items-start">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-blue-500 mt-1.5 mr-2"></span>
+                                        <span><strong>分光镜（BS）</strong>：将入射光分为两束</span>
+                                    </li>
+                                    <li class="flex items-start">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-m1 mt-1.5 mr-2"></span>
+                                        <span><strong>反射镜M1</strong>：可独立移动和倾斜</span>
+                                    </li>
+                                    <li class="flex items-start">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-m2 mt-1.5 mr-2"></span>
+                                        <span><strong>反射镜M2</strong>：可独立移动和倾斜</span>
+                                    </li>
+                                    <li class="flex items-start">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-orange-500 mt-1.5 mr-2"></span>
+                                        <span><strong>观察屏</strong>：显示干涉条纹</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            
+                            <div class="bg-yellow-50 p-4 rounded-lg">
+                                <h3 class="font-medium text-yellow-700 mb-2 flex items-center">
+                                    <i class="fa fa-lightbulb-o mr-2"></i>工作原理
+                                </h3>
+                                <p class="text-sm text-gray-700">
+                                    1. 光源发出的光经分光镜分为两束<br>
+                                    2. 两束光分别经M1和M2反射后返回分光镜<br>
+                                    3. 两束光在分光镜处再次相遇并发生干涉<br>
+                                    4. 干涉条纹形成于观察屏上<br>
+                                    5. 光程差变化导致条纹移动、收缩或扩展
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 干涉条纹显示 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <h2 class="text-xl font-semibold mb-4 flex items-center">
+                        <i class="fa fa-area-chart text-primary mr-2"></i>干涉条纹图像
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- 条纹图像 -->
+                        <div class="md:col-span-2 canvas-container bg-gray-900 p-2">
+                            <canvas id="michelsonFringeCanvas" class="w-full h-[300px]"></canvas>
+                            <div id="fringeInfo" class="absolute bottom-3 left-3 bg-black/70 text-white text-xs px-3 py-1 rounded-lg backdrop-blur-sm">
+                                干涉条纹实时显示区域
+                            </div>
+                        </div>
+                        
+                        <!-- 实验数据 -->
+                        <div class="space-y-4">
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h3 class="font-medium text-gray-800 mb-3 flex items-center">
+                                    <i class="fa fa-bar-chart mr-2 text-primary"></i>实时数据
+                                </h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <div class="text-sm text-gray-600">光程差</div>
+                                        <div class="text-2xl font-bold text-primary mt-1" id="opticalPathDifference">
+                                            0 nm
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm text-gray-600">M1移动距离</div>
+                                        <div class="text-2xl font-bold text-m1 mt-1" id="m1Distance">
+                                            0 nm
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm text-gray-600">两镜倾斜差</div>
+                                        <div class="text-2xl font-bold text-m2 mt-1" id="tiltDifference">
+                                            0°
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-primary/5 p-4 rounded-lg">
+                                <h3 class="font-medium text-primary mb-2 flex items-center">
+                                    <i class="fa fa-refresh mr-2"></i>状态提示
+                                </h3>
+                                <div class="text-sm text-gray-700" id="realTimeStatus">
+                                    <i class="fa fa-arrow-right mr-1 text-primary"></i>调整反射镜观察条纹变化
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 实验说明与公式 -->
+                <div class="bg-white rounded-xl p-5 shadow-soft">
+                    <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+                        <h2 class="text-xl font-semibold flex items-center">
+                            <i class="fa fa-book text-gray-700 mr-2"></i>实验原理与公式
+                        </h2>
+                        <div class="flex gap-2">
+                            <button id="showTheory" class="bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-3 rounded-lg text-sm transition-all-300">
+                                理论知识
+                            </button>
+                            <button id="showFormula" class="bg-primary/10 hover:bg-primary/20 text-primary py-1 px-3 rounded-lg text-sm transition-all-300">
+                                计算公式
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4 text-gray-700">
+                        <div id="experimentTheory" class="block">
+                            <h3 class="font-medium text-primary text-lg mb-2">迈克尔逊干涉仪工作原理</h3>
+                            <p class="mb-3">
+                                迈克尔逊干涉仪通过将一束光分为两束，经不同路径传播后再汇合产生干涉现象。
+                                当两束光的光程差满足一定条件时，在观察屏上形成稳定的干涉条纹。
+                            </p>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div class="bg-gray-50 p-3 rounded-lg">
+                                    <h4 class="font-medium text-gray-800 mb-2">等倾干涉</h4>
+                                    <p class="text-sm">
+                                        当M1和M2严格平行时，形成等倾干涉条纹。这些条纹是一组同心圆，
+                                        对应于具有相同入射角的光形成的干涉。光程差仅与入射角有关，
+                                        与位置无关。
+                                    </p>
+                                </div>
+                                <div class="bg-gray-50 p-3 rounded-lg">
+                                    <h4 class="font-medium text-gray-800 mb-2">等厚干涉</h4>
+                                    <p class="text-sm">
+                                        当M1和M2有微小夹角时，形成等厚干涉条纹。这些条纹是平行直线，
+                                        对应于空气膜厚度相同的点形成的干涉。光程差主要取决于空气膜厚度，
+                                        同一条纹上的各点空气膜厚度相同。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="experimentFormula" class="hidden">
+                            <h3 class="font-medium text-primary text-lg mb-3">核心计算公式</h3>
+                            
+                            <div class="space-y-4">
+                                <div class="bg-gray-50 p-3 rounded-lg">
+                                    <div class="font-medium mb-1">光程差公式：</div>
+                                    <div class="p-2 bg-white rounded border border-gray-200 mb-2">
+                                        δ = 2d·cosθ + λ/2
+                                    </div>
+                                    <div class="text-sm text-gray-600">
+                                        其中：d为M1与M2'（M2的像）的间距，θ为入射角，λ为波长，λ/2为半波损失
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="font-medium mb-1">明纹条件：</div>
+                                        <div class="p-2 bg-white rounded border border-gray-200">
+                                            2d·cosθ + λ/2 = kλ (k = 0, ±1, ±2, ...)
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg">
+                                        <div class="font-medium mb-1">暗纹条件：</div>
+                                        <div class="p-2 bg-white rounded border border-gray-200">
+                                            2d·cosθ + λ/2 = (k+1/2)λ (k = 0, ±1, ±2, ...)
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-gray-50 p-3 rounded-lg">
+                                    <div class="font-medium mb-1">条纹移动与距离关系：</div>
+                                    <div class="p-2 bg-white rounded border border-gray-200 mb-2">
+                                        Δd = (ΔN·λ) / 2
+                                    </div>
+                                    <div class="text-sm text-gray-600">
+                                        其中：Δd为M1移动的距离，ΔN为条纹移动的数量，λ为入射光波长
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实验指导模态框 -->
+        <div id="helpModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-primary">实验指导</h3>
+                    <button id="closeHelp" class="text-gray-500 hover:text-gray-700">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="space-y-6 text-gray-700" id="experimentGuidance">
+                    <!-- 实验指导内容将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- 页脚 -->
+        <footer class="mt-12 text-center text-gray-500 text-sm py-4 border-t border-gray-200">
+            <p>迈克尔逊干涉仪模拟实验 | 物理实验教学软件</p>
+        </footer>
+    </div>
+
+    <script>
+        // 实验指导内容
+        const experimentGuidanceContent = {
+            1: {
+                title: "实验一：观察等倾干涉现象",
+                steps: [
+                    "1. 点击\"设置等倾干涉\"按钮，使两反射镜保持平行",
+                    "2. 缓慢调整M1的位置，观察干涉条纹的变化",
+                    "3. 记录现象：当M1远离分光镜时，条纹向内收缩；当M1靠近分光镜时，条纹向外扩展",
+                    "4. 改变光源波长，观察条纹间距的变化（波长越长，条纹间距越大）",
+                    "5. 观察等倾干涉条纹的特点：同心圆形状，中心条纹级次最高，边缘级次较低"
+                ],
+                objective: "通过本实验，理解等倾干涉的形成条件和条纹特点，观察光程差变化对干涉条纹的影响。"
+            },
+            2: {
+                title: "实验二：观察等厚干涉现象",
+                steps: [
+                    "1. 点击\"设置等厚干涉\"按钮，使两反射镜形成微小夹角",
+                    "2. 观察干涉条纹的形状（平行直线）",
+                    "3. 缓慢调整M1的位置，观察条纹的整体移动现象",
+                    "4. 调整M1或M2的倾斜度，观察条纹疏密的变化（夹角越大，条纹越密）",
+                    "5. 改变光源波长，观察条纹间距的变化"
+                ],
+                objective: "通过本实验，理解等厚干涉的形成条件和条纹特点，观察夹角和光程差变化对干涉条纹的影响。"
+            },
+            3: {
+                title: "实验三：测量光波长",
+                steps: [
+                    "1. 点击\"设置等倾干涉\"按钮，使两反射镜保持平行",
+                    "2. 记录初始状态下M1的位置（d1）",
+                    "3. 重置条纹移动计数器为0",
+                    "4. 缓慢移动M1，同时计数条纹移动的数量（ΔN），建议计数30-50条",
+                    "5. 记录此时M1的位置（d2），计算M1移动的距离Δd = |d2 - d1|",
+                    "6. 点击\"计算结果\"按钮，根据公式λ = 2Δd/ΔN计算波长",
+                    "7. 与实际波长比较，计算相对误差"
+                ],
+                objective: "掌握利用迈克尔逊干涉仪测量光波长的方法，理解光程差与条纹移动的关系。"
+            },
+            4: {
+                title: "实验四：测量微小长度",
+                steps: [
+                    "1. 点击\"设置等倾干涉\"按钮，使两反射镜保持平行",
+                    "2. 记录初始状态下的条纹图案和M1位置",
+                    "3. 重置条纹移动计数器为0",
+                    "4. 假设M1移动了一段微小距离（通过移动M1模拟）",
+                    "5. 计数条纹移动的数量（ΔN）",
+                    "6. 已知光源波长λ，点击\"计算结果\"按钮，根据公式Δd = (ΔN·λ)/2计算微小长度",
+                    "7. 与实际移动距离比较，验证测量准确性"
+                ],
+                objective: "掌握利用迈克尔逊干涉仪测量微小长度的方法，理解干涉现象在精密测量中的应用。"
+            }
+        };
+
+        // 全局状态变量
+        const state = {
+            currentStep: 1,                   // 当前实验步骤
+            wavelength: 550,                  // 波长，单位：nm
+            intensity: 0.9,                   // 光强度，0-1之间
+            fringeDensity: 10,                // 条纹密度，增加默认值使条纹更多
+            m1Position: 0,                    // M1镜位置，单位：nm
+            m1Tilt: 0,                        // M1镜倾斜度，单位：度
+            m2Position: 0,                    // M2镜位置，单位：nm
+            m2Tilt: 0,                        // M2镜倾斜度，单位：度
+            fringeCount: 0,                   // 条纹移动计数
+            m1InitialPosition: 0,             // M1初始位置（用于计算）
+            animationFrameId: null            // 动画帧ID
+        };
+
+        // DOM元素引用
+        const elements = {
+            // 实验状态
+            currentExperiment: document.getElementById('currentExperiment'),
+            currentModeText: document.getElementById('currentModeText'),
+            experimentSteps: document.querySelectorAll('.experiment-step'),
+            
+            // 参数控制
+            wavelengthSlider: document.getElementById('wavelength'),
+            wavelengthValue: document.getElementById('wavelengthValue'),
+            intensitySlider: document.getElementById('intensity'),
+            intensityValue: document.getElementById('intensityValue'),
+            lightColor: document.getElementById('lightColor'),
+            
+            // M1控制
+            m1PositionSlider: document.getElementById('m1Position'),
+            m1PositionValue: document.getElementById('m1PositionValue'),
+            m1TiltSlider: document.getElementById('m1Tilt'),
+            m1TiltValue: document.getElementById('m1TiltValue'),
+            
+            // M2控制
+            m2PositionSlider: document.getElementById('m2Position'),
+            m2PositionValue: document.getElementById('m2PositionValue'),
+            m2TiltSlider: document.getElementById('m2Tilt'),
+            m2TiltValue: document.getElementById('m2TiltValue'),
+            
+            // 实验控制
+            resetButton: document.getElementById('resetParameters'),
+            setEqualInclinationButton: document.getElementById('setEqualInclination'),
+            setEqualThicknessButton: document.getElementById('setEqualThickness'),
+            incrementCountButton: document.getElementById('incrementCount'),
+            decrementCountButton: document.getElementById('decrementCount'),
+            fringeCountInput: document.getElementById('fringeCount'),
+            calculateButton: document.getElementById('calculate'),
+            calculationResult: document.getElementById('calculationResult'),
+            showHelpButton: document.getElementById('showHelp'),
+            closeHelpButton: document.getElementById('closeHelp'),
+            helpModal: document.getElementById('helpModal'),
+            experimentGuidance: document.getElementById('experimentGuidance'),
+            showTheoryButton: document.getElementById('showTheory'),
+            showFormulaButton: document.getElementById('showFormula'),
+            experimentTheory: document.getElementById('experimentTheory'),
+            experimentFormula: document.getElementById('experimentFormula'),
+            
+            // 画布
+            setupCanvas: document.getElementById('michelsonSetupCanvas'),
+            fringeCanvas: document.getElementById('michelsonFringeCanvas'),
+            
+            // 数据显示
+            opticalPathDifference: document.getElementById('opticalPathDifference'),
+            m1Distance: document.getElementById('m1Distance'),
+            tiltDifference: document.getElementById('tiltDifference'),
+            realTimeStatus: document.getElementById('realTimeStatus'),
+            fringeInfo: document.getElementById('fringeInfo')
+        };
+
+        // 初始化函数
+        function init() {
+            // 保存初始位置
+            state.m1InitialPosition = state.m1Position;
+            
+            // 设置Canvas尺寸
+            resizeCanvases();
+            
+            // 初始化演示
+            drawMichelsonSetup();
+            drawMichelsonFringes();
+            updateDataDisplay();
+            updateExperimentStep(1);
+            updateModeIndicator();
+            
+            // 添加事件监听器
+            addEventListeners();
+            
+            // 窗口大小改变时重新绘制
+            window.addEventListener('resize', () => {
+                resizeCanvases();
+                drawMichelsonSetup();
+                drawMichelsonFringes();
+            });
+        }
+
+        // 调整Canvas尺寸
+        function resizeCanvases() {
+            resizeCanvas(elements.setupCanvas);
+            resizeCanvas(elements.fringeCanvas);
+        }
+
+        // 调整单个Canvas尺寸
+        function resizeCanvas(canvas) {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        // 添加事件监听器
+        function addEventListeners() {
+            // 实验步骤切换
+            elements.experimentSteps.forEach(step => {
+                step.addEventListener('click', () => {
+                    const stepNumber = parseInt(step.dataset.step);
+                    updateExperimentStep(stepNumber);
+                });
+            });
+            
+            // 光源参数调整
+            elements.wavelengthSlider.addEventListener('input', (e) => {
+                state.wavelength = parseInt(e.target.value);
+                updateUI();
+                drawMichelsonFringes();
+                updateDataDisplay();
+                updateStatusText();
+            });
+            
+            elements.intensitySlider.addEventListener('input', (e) => {
+                state.intensity = parseFloat(e.target.value);
+                updateUI();
+                drawMichelsonFringes();
+            });
+            
+            // M1参数调整
+            elements.m1PositionSlider.addEventListener('input', (e) => {
+                state.m1Position = parseInt(e.target.value);
+                updateUI();
+                drawMichelsonSetup();
+                drawMichelsonFringes();
+                updateDataDisplay();
+                updateModeIndicator();
+                updateStatusText();
+            });
+            
+            elements.m1TiltSlider.addEventListener('input', (e) => {
+                state.m1Tilt = parseInt(e.target.value);
+                updateUI();
+                drawMichelsonSetup();
+                drawMichelsonFringes();
+                updateDataDisplay();
+                updateModeIndicator();
+                updateStatusText();
+            });
+            
+            // M2参数调整
+            elements.m2PositionSlider.addEventListener('input', (e) => {
+                state.m2Position = parseInt(e.target.value);
+                updateUI();
+                drawMichelsonSetup();
+                drawMichelsonFringes();
+                updateDataDisplay();
+                updateStatusText();
+            });
+            
+            elements.m2TiltSlider.addEventListener('input', (e) => {
+                state.m2Tilt = parseInt(e.target.value);
+                updateUI();
+                drawMichelsonSetup();
+                drawMichelsonFringes();
+                updateDataDisplay();
+                updateModeIndicator();
+                updateStatusText();
+            });
+            
+            // 计数器控制
+            elements.incrementCountButton.addEventListener('click', () => {
+                state.fringeCount++;
+                elements.fringeCountInput.value = state.fringeCount;
+            });
+            
+            elements.decrementCountButton.addEventListener('click', () => {
+                if (state.fringeCount > 0) {
+                    state.fringeCount--;
+                    elements.fringeCountInput.value = state.fringeCount;
+                }
+            });
+            
+            elements.fringeCountInput.addEventListener('input', (e) => {
+                let value = parseInt(e.target.value) || 0;
+                if (value < 0) value = 0;
+                state.fringeCount = value;
+                e.target.value = value;
+            });
+            
+            // 计算按钮
+            elements.calculateButton.addEventListener('click', calculateResult);
+            
+            // 理论和公式切换
+            elements.showTheoryButton.addEventListener('click', () => {
+                elements.experimentTheory.classList.remove('hidden');
+                elements.experimentFormula.classList.add('hidden');
+                elements.showTheoryButton.classList.remove('bg-primary/10', 'hover:bg-primary/20', 'text-primary');
+                elements.showTheoryButton.classList.add('bg-gray-100', 'hover:bg-gray-200', 'text-gray-700');
+                elements.showFormulaButton.classList.remove('bg-gray-100', 'hover:bg-gray-200', 'text-gray-700');
+                elements.showFormulaButton.classList.add('bg-primary/10', 'hover:bg-primary/20', 'text-primary');
+            });
+            
+            elements.showFormulaButton.addEventListener('click', () => {
+                elements.experimentTheory.classList.add('hidden');
+                elements.experimentFormula.classList.remove('hidden');
+                elements.showFormulaButton.classList.remove('bg-primary/10', 'hover:bg-primary/20', 'text-primary');
+                elements.showFormulaButton.classList.add('bg-gray-100', 'hover:bg-gray-200', 'text-gray-700');
+                elements.showTheoryButton.classList.remove('bg-gray-100', 'hover:bg-gray-200', 'text-gray-700');
+                elements.showTheoryButton.classList.add('bg-primary/10', 'hover:bg-primary/20', 'text-primary');
+            });
+            
+            // 按钮事件
+            elements.resetButton.addEventListener('click', resetParameters);
+            elements.setEqualInclinationButton.addEventListener('click', setEqualInclination);
+            elements.setEqualThicknessButton.addEventListener('click', setEqualThickness);
+            elements.showHelpButton.addEventListener('click', showExperimentHelp);
+            elements.closeHelpButton.addEventListener('click', () => {
+                elements.helpModal.classList.add('hidden');
+            });
+            
+            // 点击模态框外部关闭
+            elements.helpModal.addEventListener('click', (e) => {
+                if (e.target === elements.helpModal) {
+                    elements.helpModal.classList.add('hidden');
+                }
+            });
+        }
+
+        // 更新实验步骤
+        function updateExperimentStep(stepNumber) {
+            state.currentStep = stepNumber;
+            
+            // 更新步骤状态
+            elements.experimentSteps.forEach(step => {
+                const stepNum = parseInt(step.dataset.step);
+                if (stepNum === stepNumber) {
+                    step.classList.add('active');
+                } else {
+                    step.classList.remove('active');
+                }
+            });
+            
+            // 更新实验标题
+            const stepTitles = [
+                "观察等倾干涉现象",
+                "观察等厚干涉现象",
+                "测量光波长",
+                "测量微小长度"
+            ];
+            elements.currentExperiment.textContent = stepTitles[stepNumber - 1];
+            
+            // 根据实验步骤自动配置仪器
+            switch(stepNumber) {
+                case 1:
+                    setEqualInclination();
+                    break;
+                case 2:
+                    setEqualThickness();
+                    break;
+                case 3:
+                    setEqualInclination();
+                    state.fringeCount = 0;
+                    elements.fringeCountInput.value = 0;
+                    state.m1InitialPosition = state.m1Position;
+                    break;
+                case 4:
+                    setEqualInclination();
+                    state.fringeCount = 0;
+                    elements.fringeCountInput.value = 0;
+                    state.m1InitialPosition = state.m1Position;
+                    break;
+            }
+            
+            // 更新帮助内容
+            showExperimentHelp();
+        }
+
+        // 显示实验帮助
+        function showExperimentHelp() {
+            const content = experimentGuidanceContent[state.currentStep];
+            
+            // 构建帮助HTML
+            let html = `<h4 class="text-lg font-medium text-primary">${content.title}</h4>`;
+            
+            html += `<div class="mt-3">
+                <h5 class="font-medium mb-2">实验步骤：</h5>
+                <ol class="list-decimal pl-5 space-y-2">`;
+            
+            content.steps.forEach(step => {
+                html += `<li>${step}</li>`;
+            });
+            
+            html += `</ol></div>`;
+            
+            html += `<div class="mt-4 p-3 bg-blue-50 rounded-lg">
+                <h5 class="font-medium text-primary mb-1">实验目的：</h5>
+                <p class="text-sm">${content.objective}</p>
+            </div>`;
+            
+            // 更新帮助内容
+            elements.experimentGuidance.innerHTML = html;
+            
+            // 显示帮助模态框
+            elements.helpModal.classList.remove('hidden');
+        }
+
+        // 设置为等倾干涉
+        function setEqualInclination() {
+            // 等倾干涉条件：两镜平行（倾斜度相同）
+            const currentTilt = (state.m1Tilt + state.m2Tilt) / 2;
+            state.m1Tilt = currentTilt;
+            state.m2Tilt = currentTilt;
+            
+            // 调整位置使条纹更明显
+            if (Math.abs(state.m1Position) < 100 && Math.abs(state.m2Position) < 100) {
+                state.m1Position = 200;
+            }
+            
+            // 更新滑块
+            elements.m1TiltSlider.value = state.m1Tilt;
+            elements.m2TiltSlider.value = state.m2Tilt;
+            elements.m1PositionSlider.value = state.m1Position;
+            
+            // 更新UI和演示
+            updateUI();
+            drawMichelsonSetup();
+            drawMichelsonFringes();
+            updateDataDisplay();
+            updateModeIndicator();
+            updateStatusText();
+        }
+
+        // 设置为等厚干涉
+        function setEqualThickness() {
+            // 等厚干涉条件：两镜有微小夹角
+            state.m1Tilt = 0;
+            state.m2Tilt = 5; // 小角度差
+            
+            // 调整位置使条纹更明显
+            if (Math.abs(state.m1Position) < 100 && Math.abs(state.m2Position) < 100) {
+                state.m1Position = 100;
+            }
+            
+            // 更新滑块
+            elements.m1TiltSlider.value = state.m1Tilt;
+            elements.m2TiltSlider.value = state.m2Tilt;
+            elements.m1PositionSlider.value = state.m1Position;
+            
+            // 更新UI和演示
+            updateUI();
+            drawMichelsonSetup();
+            drawMichelsonFringes();
+            updateDataDisplay();
+            updateModeIndicator();
+            updateStatusText();
+        }
+
+        // 更新模式指示器
+        function updateModeIndicator() {
+            const tiltDiff = Math.abs(state.m1Tilt - state.m2Tilt);
+            
+            // 判断当前干涉模式
+            if (tiltDiff < 1) {
+                // 等倾干涉（两镜平行）
+                elements.currentModeText.textContent = "等倾干涉（同心圆条纹）";
+            } else {
+                // 等厚干涉（两镜有夹角）
+                elements.currentModeText.textContent = "等厚干涉（平行条纹）";
+            }
+        }
+
+        // 更新UI显示
+        function updateUI() {
+            // 更新光源参数显示
+            elements.wavelengthValue.textContent = `${state.wavelength} nm`;
+            elements.intensityValue.textContent = `${Math.round(state.intensity * 100)}%`;
+            
+            // 更新M1参数显示
+            elements.m1PositionValue.textContent = `${state.m1Position} nm`;
+            elements.m1TiltValue.textContent = `${state.m1Tilt}°`;
+            
+            // 更新M2参数显示
+            elements.m2PositionValue.textContent = `${state.m2Position} nm`;
+            elements.m2TiltValue.textContent = `${state.m2Tilt}°`;
+            
+            // 更新光源颜色
+            const color = wavelengthToColor(state.wavelength);
+            elements.lightColor.style.backgroundColor = color;
+        }
+
+        // 重置参数
+        function resetParameters() {
+            // 重置所有参数
+            state.wavelength = 550;
+            state.intensity = 0.9;
+            state.m1Position = 0;
+            state.m1Tilt = 0;
+            state.m2Position = 0;
+            state.m2Tilt = 0;
+            state.fringeCount = 0;
+            state.m1InitialPosition = 0;
+            
+            // 更新所有滑块
+            elements.wavelengthSlider.value = state.wavelength;
+            elements.intensitySlider.value = state.intensity;
+            elements.m1PositionSlider.value = state.m1Position;
+            elements.m1TiltSlider.value = state.m1Tilt;
+            elements.m2PositionSlider.value = state.m2Position;
+            elements.m2TiltSlider.value = state.m2Tilt;
+            elements.fringeCountInput.value = 0;
+            elements.calculationResult.textContent = "--";
+            
+            // 更新UI和演示
+            updateUI();
+            drawMichelsonSetup();
+            drawMichelsonFringes();
+            updateDataDisplay();
+            updateModeIndicator();
+            updateStatusText();
+        }
+
+        // 计算实验结果
+        function calculateResult() {
+            const deltaN = state.fringeCount;
+            const lambda = state.wavelength;
+            const deltaD = Math.abs(state.m1Position - state.m1InitialPosition);
+            
+            let result, unit, explanation;
+            
+            if (state.currentStep === 3) {
+                // 波长测量
+                if (deltaN > 0 && deltaD > 0) {
+                    const calculatedLambda = (2 * deltaD) / deltaN;
+                    result = calculatedLambda.toFixed(1);
+                    unit = "nm";
+                    const error = Math.abs((calculatedLambda - lambda) / lambda * 100).toFixed(1);
+                    explanation = `理论值: ${lambda} nm，测量误差: ${error}%`;
+                } else {
+                    result = "无法计算";
+                    unit = "";
+                    explanation = "请移动M1并计数条纹移动";
+                }
+            } else {
+                // 微小长度测量
+                if (deltaN > 0) {
+                    const calculatedDeltaD = (deltaN * lambda) / 2;
+                    result = calculatedDeltaD.toFixed(0);
+                    unit = "nm";
+                    const error = deltaD > 0 ? Math.abs((calculatedDeltaD - deltaD) / deltaD * 100).toFixed(1) : 0;
+                    explanation = `实际移动: ${deltaD} nm，测量误差: ${error}%`;
+                } else {
+                    result = "无法计算";
+                    unit = "";
+                    explanation = "请计数条纹移动数量";
+                }
+            }
+            
+            // 显示结果
+            elements.calculationResult.innerHTML = `${result} ${unit}<div class="text-xs text-gray-500 mt-1">${explanation}</div>`;
+        }
+
+        // 将波长转换为RGB颜色
+        function wavelengthToColor(wavelength) {
+            // 可见光范围：400-700 nm
+            let r, g, b;
+            
+            if (wavelength >= 400 && wavelength < 440) {
+                r = -(wavelength - 440) / (440 - 400);
+                g = 0;
+                b = 1;
+            } else if (wavelength >= 440 && wavelength < 490) {
+                r = 0;
+                g = (wavelength - 440) / (490 - 440);
+                b = 1;
+            } else if (wavelength >= 490 && wavelength < 510) {
+                r = 0;
+                g = 1;
+                b = -(wavelength - 510) / (510 - 490);
+            } else if (wavelength >= 510 && wavelength < 580) {
+                r = (wavelength - 510) / (580 - 510);
+                g = 1;
+                b = 0;
+            } else if (wavelength >= 580 && wavelength < 645) {
+                r = 1;
+                g = -(wavelength - 645) / (645 - 580);
+                b = 0;
+            } else if (wavelength >= 645 && wavelength <= 700) {
+                r = 1;
+                g = 0;
+                b = 0;
+            } else {
+                r = 0;
+                g = 0;
+                b = 0;
+            }
+            
+            // 增强饱和度，使条纹更明显
+            r = Math.min(1, r * 1.2);
+            g = Math.min(1, g * 1.2);
+            b = Math.min(1, b * 1.2);
+            
+            // 转换为十六进制
+            const toHex = (x) => {
+                const hex = Math.round(x * 255).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            };
+            
+            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        }
+
+        // 绘制迈克尔逊干涉仪装置示意图
+        function drawMichelsonSetup() {
+            const canvas = elements.setupCanvas;
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // 清除画布
+            ctx.clearRect(0, 0, width, height);
+            
+            // 绘制背景
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillRect(0, 0, width, height);
+            
+            // 装置布局参数
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const componentSize = 20;
+            const armLength = Math.min(width, height) / 4;
+            
+            // 绘制分光镜（BS）
+            const bsX = centerX;
+            const bsY = centerY;
+            ctx.fillStyle = '#60a5fa'; // 蓝色
+            ctx.fillRect(bsX - componentSize/2, bsY - componentSize/2, componentSize, componentSize);
+            // 绘制分光镜的半透膜
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.fillRect(bsX - componentSize/2, bsY - componentSize/2, componentSize, 2);
+            ctx.fillStyle = '#1e293b';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('BS', bsX, bsY + componentSize/2 + 15);
+            
+            // 绘制光源
+            const sourceX = bsX - armLength;
+            const sourceY = bsY;
+            const lightColor = wavelengthToColor(state.wavelength);
+            ctx.fillStyle = lightColor;
+            ctx.shadowColor = lightColor;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(sourceX, sourceY, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#1e293b';
+            ctx.fillText('光源', sourceX, sourceY + componentSize/2 + 15);
+            
+            // 绘制反射镜M1（可移动和倾斜）
+            const m1BaseX = bsX + armLength;
+            const m1BaseY = bsY;
+            // 根据位置调整M1的位置
+            const m1PositionFactor = state.m1Position / 1000; // 归一化到-1到1
+            const m1X = m1BaseX + m1PositionFactor * (armLength * 0.3); // 最大移动30%臂长
+            const m1Y = m1BaseY;
+            
+            ctx.save();
+            ctx.translate(m1X, m1Y);
+            ctx.rotate(state.m1Tilt * Math.PI / 180); // 应用倾斜
+            ctx.fillStyle = '#10b981'; // 绿色
+            ctx.fillRect(-componentSize/2, -componentSize/2, componentSize, componentSize);
+            // 绘制反射面
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(-componentSize/2, -componentSize/2, 2, componentSize);
+            ctx.restore();
+            
+            ctx.fillStyle = '#1e293b';
+            ctx.fillText('M1', m1X, m1Y + componentSize/2 + 15);
+            
+            // 绘制反射镜M2（可移动和倾斜）
+            const m2BaseY = bsY - armLength;
+            const m2BaseX = bsX;
+            // 根据位置调整M2的位置
+            const m2PositionFactor = state.m2Position / 1000; // 归一化到-1到1
+            const m2Y = m2BaseY - m2PositionFactor * (armLength * 0.3); // 最大移动30%臂长
+            const m2X = m2BaseX;
+            
+            ctx.save();
+            ctx.translate(m2X, m2Y);
+            ctx.rotate(-state.m2Tilt * Math.PI / 180); // 应用倾斜
+            ctx.fillStyle = '#7C3AED'; // 紫色
+            ctx.fillRect(-componentSize/2, -componentSize/2, componentSize, componentSize);
+            // 绘制反射面
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(-componentSize/2, -componentSize/2, componentSize, 2);
+            ctx.restore();
+            
+            ctx.fillStyle = '#1e293b';
+            ctx.fillText('M2', m2X, m2Y - componentSize/2 - 5);
+            
+            // 绘制观察屏
+            const screenY = bsY + armLength;
+            const screenX = bsX;
+            ctx.fillStyle = '#f97316'; // 橙色
+            ctx.fillRect(screenX - componentSize, screenY - componentSize/2, componentSize * 2, componentSize);
+            ctx.fillStyle = '#1e293b';
+            ctx.fillText('观察屏', screenX, screenY + componentSize/2 + 15);
+            
+            // 绘制光线路径
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)'; // 蓝色半透明，增强可见性
+            ctx.lineWidth = 2;
+            
+            // 光源到分光镜
+            ctx.moveTo(sourceX + 10, sourceY);
+            ctx.lineTo(bsX - componentSize/2, bsY);
+            ctx.stroke();
+            
+            // 分光镜到M1
+            ctx.beginPath();
+            ctx.moveTo(bsX + componentSize/2, bsY);
+            ctx.lineTo(m1X - componentSize/2 * Math.cos(state.m1Tilt * Math.PI / 180), 
+                      m1Y - componentSize/2 * Math.sin(state.m1Tilt * Math.PI / 180));
+            ctx.stroke();
+            
+            // M1到分光镜
+            ctx.beginPath();
+            ctx.moveTo(m1X + componentSize/2 * Math.cos(state.m1Tilt * Math.PI / 180), 
+                      m1Y + componentSize/2 * Math.sin(state.m1Tilt * Math.PI / 180));
+            ctx.lineTo(bsX + componentSize/2, bsY);
+            ctx.stroke();
+            
+            // 分光镜到M2
+            const m2TiltRadians = state.m2Tilt * Math.PI / 180;
+            ctx.beginPath();
+            ctx.moveTo(bsX, bsY - componentSize/2);
+            ctx.lineTo(m2X + componentSize/2 * Math.sin(m2TiltRadians), 
+                      m2Y + componentSize/2 * Math.cos(m2TiltRadians));
+            ctx.stroke();
+            
+            // M2到分光镜
+            ctx.beginPath();
+            ctx.moveTo(m2X - componentSize/2 * Math.sin(m2TiltRadians), 
+                      m2Y - componentSize/2 * Math.cos(m2TiltRadians));
+            ctx.lineTo(bsX, bsY - componentSize/2);
+            ctx.stroke();
+            
+            // 分光镜到观察屏
+            ctx.beginPath();
+            ctx.moveTo(bsX, bsY + componentSize/2);
+            ctx.lineTo(screenX, screenY - componentSize/2);
+            ctx.stroke();
+            
+            // 绘制两镜夹角指示（当有角度差时）
+            const tiltDiff = Math.abs(state.m1Tilt - state.m2Tilt);
+            if (tiltDiff > 1) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)'; // 红色半透明
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 2]);
+                
+                // 绘制角度指示线
+                const angleIndicatorSize = 30;
+                const m1NormalAngle = state.m1Tilt * Math.PI / 180;
+                const m2NormalAngle = -state.m2Tilt * Math.PI / 180 + Math.PI/2;
+                
+                // M1法线
+                const m1NormalX1 = m1X;
+                const m1NormalY1 = m1Y;
+                const m1NormalX2 = m1X + angleIndicatorSize * Math.cos(m1NormalAngle + Math.PI/2);
+                const m1NormalY2 = m1Y + angleIndicatorSize * Math.sin(m1NormalAngle + Math.PI/2);
+                
+                // M2法线
+                const m2NormalX1 = m2X;
+                const m2NormalY1 = m2Y;
+                const m2NormalX2 = m2X + angleIndicatorSize * Math.cos(m2NormalAngle);
+                const m2NormalY2 = m2Y + angleIndicatorSize * Math.sin(m2NormalAngle);
+                
+                ctx.moveTo(m1NormalX1, m1NormalY1);
+                ctx.lineTo(m1NormalX2, m1NormalY2);
+                ctx.moveTo(m2NormalX1, m2NormalY1);
+                ctx.lineTo(m2NormalX2, m2NormalY2);
+                ctx.stroke();
+                
+                // 标注角度差
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`θ=${tiltDiff.toFixed(1)}°`, 
+                           (m1NormalX2 + m2NormalX2) / 2, 
+                           (m1NormalY2 + m2NormalY2) / 2 - 5);
+                ctx.setLineDash([]);
+            }
+            
+            // 绘制M1移动距离指示（实验3和4）
+            if ((state.currentStep === 3 || state.currentStep === 4) && 
+                Math.abs(state.m1Position - state.m1InitialPosition) > 50) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.7)'; // M1颜色
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([2, 2]);
+                
+                // 绘制初始位置参考线
+                const initialM1X = m1BaseX + (state.m1InitialPosition / 1000) * (armLength * 0.3);
+                ctx.moveTo(initialM1X, m1Y - 15);
+                ctx.lineTo(initialM1X, m1Y + 15);
+                ctx.stroke();
+                
+                // 绘制当前位置线
+                ctx.setLineDash([]);
+                ctx.moveTo(m1X, m1Y - 15);
+                ctx.lineTo(m1X, m1Y + 15);
+                ctx.stroke();
+                
+                // 绘制距离线
+                ctx.setLineDash([3, 2]);
+                ctx.moveTo(initialM1X, m1Y - 20);
+                ctx.lineTo(m1X, m1Y - 20);
+                ctx.stroke();
+                
+                // 绘制箭头
+                const arrowSize = 4;
+                const isRight = m1X > initialM1X;
+                ctx.beginPath();
+                ctx.moveTo(isRight ? m1X : initialM1X, m1Y - 20);
+                ctx.lineTo(isRight ? m1X - arrowSize : initialM1X + arrowSize, m1Y - 20 - arrowSize);
+                ctx.moveTo(isRight ? m1X : initialM1X, m1Y - 20);
+                ctx.lineTo(isRight ? m1X - arrowSize : initialM1X + arrowSize, m1Y - 20 + arrowSize);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+                // 标注移动距离
+                const deltaD = Math.abs(state.m1Position - state.m1InitialPosition);
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Δd=${deltaD}nm`, 
+                           (initialM1X + m1X) / 2, 
+                           m1Y - 28);
+            }
+        }
+
+        // 绘制迈克尔逊干涉条纹（增强版）
+        function drawMichelsonFringes() {
+            const canvas = elements.fringeCanvas;
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // 清除画布
+            ctx.clearRect(0, 0, width, height);
+            
+            // 绘制背景
+            ctx.fillStyle = '#0f172a'; // 深色背景
+            ctx.fillRect(0, 0, width, height);
+            
+            // 计算干涉参数
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const maxDist = Math.min(centerX, centerY) * 0.95;
+            
+            // 波长（nm）
+            const lambda = state.wavelength;
+            // 光程差（nm）：考虑两个镜子的位置差
+            const d = (state.m1Position - state.m2Position) / 2;
+            // 倾斜度差（弧度）
+            const tiltDiff = (state.m2Tilt - state.m1Tilt) * Math.PI / 180;
+            // 条纹密度因子（增强条纹数量）
+            const densityFactor = 12 / 5; // 增加默认密度
+            
+            // 获取光源颜色
+            const lightColor = wavelengthToColor(state.wavelength);
+            const colorComponents = lightColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+            const r = parseInt(colorComponents[1], 16);
+            const g = parseInt(colorComponents[2], 16);
+            const b = parseInt(colorComponents[3], 16);
+            
+            // 绘制像素点（优化性能同时增加条纹数量）
+            const pixelStep = Math.max(1, Math.floor(4 - 10 / 4)); // 基于默认密度的步长
+            for (let x = 0; x < width; x += pixelStep) {
+                for (let y = 0; y < height; y += pixelStep) {
+                    // 计算相对坐标
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    const rDist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // 计算入射角θ（归一化到0-π/2）
+                    const theta = rDist < 1e-6 ? 0 : Math.min(Math.PI/2, Math.asin(rDist / maxDist));
+                    
+                    // 计算光程差
+                    let delta;
+                    const tiltFactor = tiltDiff * 0.5 * densityFactor; // 增强倾斜效果
+                    
+                    if (Math.abs(tiltDiff) < 0.02) { // 两镜基本平行
+                        // 等倾干涉：δ = 2d·cosθ + λ/2
+                        delta = 2 * d * Math.cos(theta) + lambda / 2;
+                    } else {
+                        // 等厚干涉：δ = 2d + 2·tilt·x + λ/2（更明显的平行条纹）
+                        delta = 2 * d + 2 * tiltFactor * dx * densityFactor + lambda / 2;
+                    }
+                    
+                    // 计算相位差
+                    const phaseDiff = (2 * Math.PI * delta) / lambda;
+                    
+                    // 计算光强（增加对比度，使条纹更明显）
+                    const intensity = Math.pow(Math.cos(phaseDiff / 2), 4) * state.intensity; // 使用4次方增强对比度
+                    
+                    // 绘制点（增加亮度使条纹更清晰）
+                    const brightness = Math.min(1, intensity * 1.2);
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${brightness})`;
+                    ctx.fillRect(x, y, pixelStep, pixelStep);
+                }
+            }
+            
+            // 对于实验3和4，在中心绘制参考点
+            if (state.currentStep === 3 || state.currentStep === 4) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(centerX - 8, centerY);
+                ctx.lineTo(centerX + 8, centerY);
+                ctx.moveTo(centerX, centerY - 8);
+                ctx.lineTo(centerX, centerY + 8);
+                ctx.stroke();
+            }
+        }
+
+        // 更新数据显示
+        function updateDataDisplay() {
+            // 计算光程差（考虑两个镜子的位置）
+            const opticalPath = Math.abs(state.m1Position - state.m2Position);
+            elements.opticalPathDifference.textContent = `${opticalPath} nm`;
+            
+            // 计算M1移动距离
+            const m1Distance = Math.abs(state.m1Position - state.m1InitialPosition);
+            elements.m1Distance.textContent = `${m1Distance} nm`;
+            
+            // 计算两镜倾斜差
+            const tiltDiff = Math.abs(state.m1Tilt - state.m2Tilt);
+            elements.tiltDifference.textContent = `${tiltDiff}°`;
+        }
+
+        // 更新状态文本
+        function updateStatusText() {
+            const tiltDiff = Math.abs(state.m1Tilt - state.m2Tilt);
+            const opticalPath = Math.abs(state.m1Position - state.m2Position);
+            
+            // 根据当前实验步骤显示不同的状态提示
+            switch(state.currentStep) {
+                case 1:
+                    if (opticalPath > 100) {
+                        const direction = state.m1Position > state.m2Position ? "收缩" : "扩展";
+                        elements.realTimeStatus.innerHTML = `<i class="fa fa-circle-o mr-1 text-primary"></i>等倾干涉：条纹${direction}，可观察同心圆结构`;
+                    } else {
+                        elements.realTimeStatus.innerHTML = `<i class="fa fa-check mr-1 text-green-500"></i>等倾干涉：光程差小，条纹稀疏`;
+                    }
+                    break;
+                case 2:
+                    if (tiltDiff > 8) {
+                        elements.realTimeStatus.innerHTML = `<i class="fa fa-minus mr-1 text-primary"></i>等厚干涉：夹角大，条纹密集`;
+                    } else if (tiltDiff < 3) {
+                        elements.realTimeStatus.innerHTML = `<i class="fa fa-minus mr-1 text-primary"></i>等厚干涉：夹角小，条纹稀疏`;
+                    } else {
+                        elements.realTimeStatus.innerHTML = `<i class="fa fa-minus mr-1 text-primary"></i>等厚干涉：条纹均匀，适合观察`;
+                    }
+                    break;
+                case 3:
+                    elements.realTimeStatus.innerHTML = `<i class="fa fa-ruler mr-1 text-primary"></i>波长测量：移动M1并计数条纹移动数`;
+                    break;
+                case 4:
+                    elements.realTimeStatus.innerHTML = `<i class="fa fa-microscope mr-1 text-primary"></i>微小长度测量：记录条纹移动数量`;
+                    break;
+            }
+        }
+
+        // 页面加载完成后初始化
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
+    
