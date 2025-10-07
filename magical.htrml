@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>靶线圈电磁仿真（优化版）</title>
+    <!-- 引入所需库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.148.0/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <style>
+        /* 保持原样式不变 */
+        body { margin: 0; font-family: Arial, sans-serif; overflow: hidden; }
+        .container { display: flex; height: 100vh; } /* 全屏弹性布局 */
+        
+        #param-panel { 
+            width: 300px; 
+            background: #f5f5f5; 
+            padding: 15px; 
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        #visual-area { flex: 1; position: relative; background: #fafafa; }
+        #simulation-canvas { width: 100%; height: 100%; }
+        
+        .param-group { margin-bottom: 10px; }
+        h3 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #3498db; padding-bottom: 6px; }
+        h4 { color: #34495e; margin: 10px 0 5px; font-size: 14px; }
+        label { display: block; margin: 8px 0 4px; font-size: 13px; color: #555; }
+        input { 
+            width: 100%; 
+            padding: 7px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 13px;
+        }
+        .btn-group { display: flex; gap: 8px; margin-top: 10px; }
+        
+        /* 按钮样式 */
+        button { 
+            flex: 1;
+            padding: 8px; 
+            background: #3498db; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            transition: background 0.3s;
+            font-size: 13px;
+        }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #bdc3c7; cursor: not-allowed; }
+        
+        .status { 
+            position: absolute; 
+            bottom: 10px; 
+            left: 10px; 
+            background: rgba(255,255,255,0.9); 
+            padding: 8px 12px; 
+            border-radius: 4px;
+            font-size: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .control-tip { 
+            position: absolute; 
+            bottom: 45px; 
+            left: 10px; 
+            background: rgba(44,62,80,0.8); 
+            color: white;
+            padding: 6px 10px; 
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        
+        .data-display {
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            font-size: 12px;
+        }
+        .data-label { color: #555; }
+        .data-value { font-weight: bold; }
+        .chart-container {
+            width: 100%;
+            height: 160px;
+            margin-top: 10px;
+            background: white;
+            border-radius: 4px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        
+        .field-legend {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            margin: 3px 0;
+        }
+        .color-box {
+            width: 12px;height: 12px;margin-right: 5px;border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 保持原HTML骨架不变 -->
+    <div class="container">
+        <!-- 左侧参数面板 -->
+        <div id="param-panel">
+            <div>
+                <h3>靶线圈仿真参数</h3>
+                
+                <!-- 励磁线圈参数 -->
+                <div class="param-group">
+                    <h4>励磁线圈</h4>
+                    <label>励磁电流 (A)</label>
+                    <input type="number" id="excitation-current" value="2.0" min="0.5" max="10" step="0.5">
+                    
+                    <label>线圈半径 (m)</label>
+                    <input type="number" id="coil-radius" value="0.1" min="0.05" max="0.2" step="0.01">
+                    
+                    <label>线圈匝数</label>
+                    <input type="number" id="coil-turns" value="100" min="50" max="200" step="10">
+                </div>
+                
+                <!-- 感应线圈参数 -->
+                <div class="param-group">
+                    <h4>感应线圈</h4>
+                    <label>线圈半径 (m)</label>
+                    <input type="number" id="induction-radius" value="0.1" min="0.05" max="0.2" step="0.01">
+                    
+                    <label>与励磁线圈距离 (m)</label>
+                    <input type="number" id="coil-distance" value="0.15" min="0.1" max="0.3" step="0.01">
+                    
+                    <label>线圈匝数</label>
+                    <input type="number" id="induction-turns" value="100" min="50" max="200" step="10">
+                </div>
+                
+                <!-- 金属圆片参数 -->
+                <div class="param-group">
+                    <h4>金属圆片</h4>
+                    <label>速度 (m/s)</label>
+                    <input type="number" id="disk-speed" value="0.8" min="0.1" max="2" step="0.1">
+                    
+                    <label>半径 (m)</label>
+                    <input type="number" id="disk-radius" value="0.08" min="0.05" max="0.15" step="0.01">
+                    
+                    <label>电导率 (S/m, ×1e7)</label>
+                    <input type="number" id="disk-conductivity" value="5.8" min="1" max="10" step="0.1">
+                    
+                    <label>相对磁导率</label>
+                    <input type="number" id="disk-permeability" value="100" min="1" max="500" step="10">
+                </div>
+                
+                <!-- 仿真控制按钮 -->
+                <div class="btn-group">
+                    <button id="start-sim">开始</button>
+                    <button id="pause-sim" disabled>暂停</button>
+                    <button id="reset-sim">重置</button>
+                </div>
+            </div>
+            
+            <!-- 实时数据显示 -->
+            <div>
+                <h3>实时数据</h3>
+                <div class="data-display">
+                    <div class="data-item">
+                        <span class="data-label">仿真时间</span>
+                        <span class="data-value" id="sim-time">0.00 s</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">圆片位置</span>
+                        <span class="data-value" id="disk-position">0.00 m</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">感应电流</span>
+                        <span class="data-value" id="induced-current">0.00 mA</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">磁通量</span>
+                        <span class="data-value" id="magnetic-flux">0.00 μWb</span>
+                    </div>
+                </div>
+                
+                <!-- 磁场图例 -->
+                <div style="margin-top: 10px;">
+                    <h4>磁场图例</h4>
+                    <div class="field-legend">
+                        <div class="color-box" style="background-color: #ff3333;"></div>
+                        <span>励磁磁场</span>
+                    </div>
+                    <div class="field-legend">
+                        <div class="color-box" style="background-color: #3498db;"></div>
+                        <span>涡流磁场</span>
+                    </div>
+                    <div class="field-legend">
+                        <div class="color-box" style="background-color: #2ecc71;"></div>
+                        <span>磁化磁场</span>
+                    </div>
+                    <div class="field-legend">
+                        <div class="color-box" style="background-color: #9b59b6;"></div>
+                        <span>感应线圈</span>
+                    </div>
+                </div>
+            </div>
+            
+
+            <!-- 数据曲线 -->
+            <div>
+                <h4>涡流电流变化 (mA)</h4>
+                <div class="chart-container">
+                    <canvas id="eddy-current-chart"></canvas>
+                </div>
+                
+                <h4>感应线圈磁通量 (μWb)</h4>
+                <div class="chart-container">
+                    <canvas id="flux-chart"></canvas>
+                </div>
+
+            </div>
+        </div>
+        
+        <!-- 右侧可视化区域 -->
+        <div id="visual-area">
+            <div id="simulation-canvas"></div>
+            <div class="status">初始化中...</div>
+            <div class="control-tip">鼠标拖动→旋转 | 滚轮→缩放 | 仿真时长：2秒</div>
+        </div>
+    </div>
+
+    <script>
+        // 全局对象与状态管理（保持原结构）
+        let scene, camera, renderer, controls; //场景、相机、渲染器、控制器
+        let coreObjects = { 
+            excitationCoil: null,  // 励磁线圈
+            inductionCoil: null,   // 感应线圈
+            metalDisk: null,       // 金属圆片
+            fieldArrows: []        // 磁场箭头数组
+        };
+        
+        // 图表对象
+        let charts = {
+            eddyCurrentChart: null,
+            fluxChart: null
+        };
+        
+        // 仿真状态（保持原结构）
+        const simulationState = {
+            isRunning: false,
+            currentTime: 0,
+            maxTime: 2, // 统一为2秒，与提示一致
+            lastFrameTime: 0,
+            diskPosition: -0.15, // 初始位置
+            diskSpeed: 0.8,      // 圆片速度
+            inducedCurrent: 0,   // 感应电流
+            magneticFlux: 0,     // 磁通量
+            fluxRate: 0,         // 磁通量变化率，打破循环依赖
+            
+            // 数据记录（用于图表）
+            dataHistory: {
+                time: [],
+                eddyCurrent: [],
+                magneticFlux: []
+            }
+        };
+        
+        // 物理参数（保持原结构）
+        const physicsParams = {
+            // 励磁线圈参数
+            excitationCurrent: 2.0,
+            coilRadius: 0.1,
+            coilTurns: 100,
+            
+            // 感应线圈参数
+            inductionRadius: 0.1,
+            coilDistance: 0.15,  // 与励磁线圈距离（后方）
+            inductionTurns: 100,
+            
+            // 金属圆片参数
+            diskRadius: 0.08,
+            diskConductivity: 5.8e7, // 电导率
+            diskThickness: 0.005,    // 圆片厚度
+            diskPermeability: 100,   // 相对磁导率
+            mu0: 4 * Math.PI * 1e-7, // 真空磁导率
+            resistance: 10           // 线圈电阻(Ω)
+        };
+        
+        // DOM元素（保持原结构）
+        const statusElement = document.querySelector('.status');
+        const simTimeElement = document.getElementById('sim-time');
+        const diskPosElement = document.getElementById('disk-position');
+        const inducedCurrentElement = document.getElementById('induced-current');
+        const magneticFluxElement = document.getElementById('magnetic-flux');
+
+        // 1. 视图控制器（保持原逻辑，仅优化拖动灵敏度）
+        class CustomViewControls {
+            constructor(camera, domElement) {
+                this.camera = camera;
+                this.domElement = domElement;
+                this.target = new THREE.Vector3(0, 0, 0); // 看向原点
+                this.rotateSpeed = 0.01; // 优化：提升拖动灵敏度，避免拖不动
+                this.zoomSpeed = 0.05;
+                this.isDragging = false;
+                this.lastMousePos = { x: 0, y: 0 };
+                this.cameraSphere = new THREE.Spherical(0.8, Math.PI/3, Math.PI/3); // 初始视角
+                
+                this.bindEvents();
+                this.updateCameraPosition();
+            }
+
+            bindEvents() {
+                this.domElement.addEventListener('mousedown', (e) => {
+                    this.isDragging = true;
+                    this.lastMousePos = { x: e.clientX, y: e.clientY };
+                    this.domElement.style.cursor = 'grabbing';
+                });
+
+                this.domElement.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    
+                    const deltaX = e.clientX - this.lastMousePos.x;
+                    const deltaY = e.clientY - this.lastMousePos.y;
+                    
+                    this.cameraSphere.theta += deltaX * this.rotateSpeed; // 水平旋转
+                    this.cameraSphere.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.cameraSphere.phi + deltaY * this.rotateSpeed)); // 垂直旋转
+                    
+                    this.lastMousePos = { x: e.clientX, y: e.clientY };
+                    this.updateCameraPosition();
+                });
+
+                this.domElement.addEventListener('mouseup', () => {
+                    this.isDragging = false;
+                    this.domElement.style.cursor = 'grab';
+                });
+
+                this.domElement.addEventListener('wheel', (e) => {
+                    this.cameraSphere.radius = Math.max(0.3, Math.min(2, this.cameraSphere.radius - e.deltaY * this.zoomSpeed));
+                    this.updateCameraPosition();
+                });
+            }
+
+            updateCameraPosition() {
+                this.camera.position.setFromSpherical(this.cameraSphere);
+                this.camera.lookAt(this.target);
+            }
+
+            resetView() {
+                this.cameraSphere = new THREE.Spherical(0.8, Math.PI/3, Math.PI/3);
+                this.updateCameraPosition();
+            }
+        }
+
+        // 2. 初始化3D环境（核心修改：关闭阴影、设置相机初始位置）
+        function init3DEnvironment() {
+            // 创建场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf8f9fa);
+            const canvasContainer = document.getElementById('simulation-canvas');
+            
+            // 创建相机（修复：添加初始位置，确保能看到场景）
+            camera = new THREE.PerspectiveCamera(
+                65,
+                canvasContainer.clientWidth / canvasContainer.clientHeight,
+                0.01,
+                10
+            );
+            camera.position.set(0.8, 0.6, 1.0); // 关键：相机对准场景中心
+            
+            // 创建渲染器（保持原配置）
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+            canvasContainer.appendChild(renderer.domElement);
+            
+            // 添加光源（优化：关闭方向光阴影，减少GPU负载）
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(0.5, 1, 0.3);
+            dirLight.castShadow = false; // 关闭阴影计算（核心优化）
+            scene.add(ambientLight, dirLight);
+            
+            // 添加坐标系（保持原逻辑）
+            scene.add(new THREE.AxesHelper(0.5));
+            
+            // 初始化控制器（保持原逻辑）
+            controls = new CustomViewControls(camera, canvasContainer);
+            
+            // 创建核心物体（保持原逻辑）
+            createExcitationCoil(physicsParams.coilRadius);
+            createInductionCoil(physicsParams.inductionRadius, physicsParams.coilDistance);
+            createMetalDisk(physicsParams.diskRadius);
+            
+            // 初始化磁场可视化（保持原逻辑）
+            updateFieldVisualization();
+            
+            // 窗口适配（保持原逻辑）
+            window.addEventListener('resize', () => {
+                const width = canvasContainer.clientWidth;
+                const height = canvasContainer.clientHeight;
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+            });
+            
+            // 初始渲染（保持原逻辑）
+            render();
+            updateUI();
+            statusElement.textContent = '初始化完成，点击"开始"运行2秒短时仿真';
+        }
+
+        // 3. 创建3D物体（保持原逻辑，仅优化线圈分段数）
+        // 励磁线圈（优化：分段数120→60，减少顶点数）
+        function createExcitationCoil(radius) {
+            if (coreObjects.excitationCoil) {
+                scene.remove(coreObjects.excitationCoil);
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            const points = [];
+            for (let i = 0; i <= 60; i++) { // 优化：分段数从120→60
+                const angle = (i / 60) * Math.PI * 2;
+                points.push(new THREE.Vector3(
+                    radius * Math.cos(angle),
+                    radius * Math.sin(angle),
+                    0 // 励磁线圈在Z=0位置
+                ));
+            }
+            geometry.setFromPoints(points);
+
+            const material = new THREE.LineBasicMaterial({
+                color: 0xff3333, // 红色标识
+                linewidth: 3
+            });
+
+            coreObjects.excitationCoil = new THREE.Line(geometry, material);
+            scene.add(coreObjects.excitationCoil);
+        }
+
+        // 感应线圈（优化：分段数120→60）
+        function createInductionCoil(radius, distance) {
+            if (coreObjects.inductionCoil) {
+                scene.remove(coreObjects.inductionCoil);
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            const points = [];
+            for (let i = 0; i <= 60; i++) { // 优化：分段数从120→60
+                const angle = (i / 60) * Math.PI * 2;
+                points.push(new THREE.Vector3(
+                    radius * Math.cos(angle),
+                    radius * Math.sin(angle),
+                    distance // 感应线圈在励磁线圈后方（Z轴正方向）
+                ));
+            }
+            geometry.setFromPoints(points);
+
+            const material = new THREE.LineBasicMaterial({
+                color: 0x9b59b6, // 紫色标识
+                linewidth: 3
+            });
+
+            coreObjects.inductionCoil = new THREE.Line(geometry, material);
+            scene.add(coreObjects.inductionCoil);
+        }
+        
+        // 创建金属圆盘（保持原逻辑）
+        function createMetalDisk(radius) {
+            if (coreObjects.metalDisk) {
+                scene.remove(coreObjects.metalDisk);
+            }
+
+            const geometry = new THREE.CylinderGeometry(
+                radius, radius, physicsParams.diskThickness, 16 // 优化：分段数32→16
+            );
+
+            const material = new THREE.MeshLambertMaterial({
+                color: 0x95a5a6,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            coreObjects.metalDisk = new THREE.Mesh(geometry, material);
+            coreObjects.metalDisk.rotation.x = Math.PI / 2; 
+            coreObjects.metalDisk.position.z = simulationState.diskPosition;
+            scene.add(coreObjects.metalDisk); // 加到场景里
+        }
+
+        // 4. 物理计算优化（核心：简化涡流+磁化磁场计算）
+        /**
+         * 计算励磁线圈产生的磁场（保持原逻辑）
+         */
+        function calculateExcitationField(x, y, z) {
+            const B = new THREE.Vector3(0, 0, 0);
+            const { coilRadius, excitationCurrent, mu0 } = physicsParams;
+            const segments = 40; // 优化：分段数60→40
+            
+            for (let i = 0; i < segments; i++) {
+                const theta = (i / segments) * 2 * Math.PI;
+                const rPrime = new THREE.Vector3(
+                    coilRadius * Math.cos(theta),
+                    coilRadius * Math.sin(theta),
+                    0
+                );
+                
+                const dl = new THREE.Vector3(
+                    -coilRadius * Math.sin(theta) * (2 * Math.PI / segments),
+                    coilRadius * Math.cos(theta) * (2 * Math.PI / segments),
+                    0
+                );
+                
+                const rVector = new THREE.Vector3(x, y, z).sub(rPrime);
+                const rMag = rVector.length();
+                
+                if (rMag < 1e-10) continue;
+                
+                const cross = new THREE.Vector3().crossVectors(dl, rVector);
+                cross.multiplyScalar(mu0 * excitationCurrent / (4 * Math.PI * Math.pow(rMag, 3)));
+                B.add(cross);
+            }
+            
+            return B;
+        }
+        
+        /**
+         * 简化涡流计算（删除重复函数，减少积分分段，利用轴对称）
+         */
+        function calculateEddyCurrentField(x, y, z) {
+            const B = new THREE.Vector3(0, 0, 0);
+            const { diskRadius, diskConductivity, diskThickness, mu0 } = physicsParams;
+            const diskZ = simulationState.diskPosition;
+            const fluxRate = simulationState.fluxRate; // 用上一帧的变化率，避免循环
+            
+            // 优化：减少积分分段（径向15→10，角向20→10）
+            const radialSegments = 10;  
+            const angleSegments = 10;   
+            const dr = diskRadius / radialSegments;
+            const dTheta = (2 * Math.PI) / angleSegments;
+            
+            // 利用轴对称性：仅遍历径向，角向用倍数代替
+            for (let r = dr; r <= diskRadius; r += dr) {
+                const theta = 0; // 取任意角度（轴对称）
+                const currentX = r * Math.cos(theta);
+                const currentY = r * Math.sin(theta);
+                
+                // 计算电流密度
+                const currentDensity = calculateCurrentDensity(r, fluxRate);
+                // 单个角向电流（乘以总段数，替代角向循环）
+                const singleCurrent = currentDensity * 2 * Math.PI * r * dr * dTheta * diskThickness;
+                
+                // 计算单个电流环的磁场
+                const field = calculateFieldFromCurrentLoop(
+                    currentX, currentY, diskZ, r, singleCurrent, x, y, z
+                );
+                // 累加角向所有段的贡献
+                B.addScaledVector(field, angleSegments);
+            }
+            
+            return B;
+        }
+        
+        /**
+         * 简化磁化磁场计算（改用磁矩模型，替代双重积分）
+         * 核心：将圆盘视为磁偶极子，用磁偶极子磁场公式近似
+         */
+        function calculateMagnetizationField(x, y, z) {
+            const B = new THREE.Vector3(0, 0, 0);
+            const { diskRadius, diskPermeability, mu0, diskThickness } = physicsParams;
+            const diskZ = simulationState.diskPosition; // 圆盘位置
+            
+            // 1. 计算圆盘中心的励磁磁场（近似整个圆盘的磁场）
+            const B_exc = calculateExcitationField(0, 0, diskZ);
+            const chi = diskPermeability - 1; // 磁化率
+            
+            // 2. 计算圆盘的等效磁矩 M = χ * B_exc / μ0（磁化强度）
+            const M = new THREE.Vector3().copy(B_exc).multiplyScalar(chi / mu0);
+            
+            // 3. 计算磁偶极矩 p = M * V（V是圆盘体积）
+            const volume = Math.PI * diskRadius * diskRadius * diskThickness;
+            const p = new THREE.Vector3().copy(M).multiplyScalar(volume);
+            
+            // 4. 磁偶极子产生的磁场公式（简化计算）
+            const r = new THREE.Vector3(x, y, z - diskZ); // 场点相对于圆盘中心的位置
+            const rMag = r.length();
+            if (rMag < 1e-10) return B;
+            
+            const rUnit = new THREE.Vector3().copy(r).normalize();
+            // 磁偶极子磁场公式：B = (μ0/(4π)) * [3(p·r̂)r̂ - p] / r³
+            const pDotR = p.dot(rUnit);
+            const term1 = new THREE.Vector3().copy(rUnit).multiplyScalar(3 * pDotR);
+            const term2 = new THREE.Vector3().copy(p);
+            const bracket = new THREE.Vector3().subVectors(term1, term2);
+            bracket.multiplyScalar(mu0 / (4 * Math.PI * Math.pow(rMag, 3)));
+            
+            B.add(bracket);
+            return B;
+        }
+        
+        /**
+         * 计算涡流密度（保持原逻辑）
+         */
+        function calculateCurrentDensity(r, fluxRate) {
+            if (r < 1e-6) return 0; // 避免r=0时的奇点
+            
+            // 感应电场强度 (E = -1/(2πr) * dΦ/dt)
+            const E = Math.abs(fluxRate) / (2 * Math.PI * r);
+            
+            // 电流密度 (J = σE)
+            return physicsParams.diskConductivity * E;
+        }
+        
+        /**
+         * 计算单个电流环产生的磁场（保持原逻辑，优化分段数）
+         */
+        function calculateFieldFromCurrentLoop(loopX, loopY, loopZ, loopR, current, x, y, z) {
+            const B = new THREE.Vector3(0, 0, 0);
+            const segments = 20; // 优化：分段数30→20
+            const { mu0 } = physicsParams;
+            
+            for (let i = 0; i < segments; i++) {
+                const theta = (i / segments) * 2 * Math.PI;
+                const rPrime = new THREE.Vector3(
+                    loopX + loopR * Math.cos(theta),
+                    loopY + loopR * Math.sin(theta),
+                    loopZ
+                );
+                
+                const dl = new THREE.Vector3(
+                    -loopR * Math.sin(theta) * (2 * Math.PI / segments),
+                    loopR * Math.cos(theta) * (2 * Math.PI / segments),
+                    0
+                );
+                
+                const rVector = new THREE.Vector3(x, y, z).sub(rPrime);
+                const rMag = rVector.length();
+                
+                if (rMag < 1e-10) continue;
+                
+                const cross = new THREE.Vector3().crossVectors(dl, rVector);
+                cross.multiplyScalar(mu0 * current / (4 * Math.PI * Math.pow(rMag, 3)));
+                B.add(cross);
+            }
+            
+            return B;
+        }
+        
+        /**
+         * 计算磁通量变化率（保持原逻辑）
+         */
+        function calculateFluxChangeRate() {
+            const flux = calculateMagneticFlux(physicsParams.inductionRadius, physicsParams.coilDistance);
+            const history = simulationState.dataHistory;
+            if (history.magneticFlux.length < 2) return 0;
+            
+            const lastFlux = history.magneticFlux[history.magneticFlux.length - 1] * 1e-6; // 转回Wb
+            const lastTime = parseFloat(history.time[history.time.length - 1]);
+            const deltaFlux = flux - lastFlux;
+            const deltaTime = simulationState.currentTime - lastTime;
+            
+            return deltaTime > 0 ? deltaFlux / deltaTime : 0;
+        }
+        
+        /**
+         * 计算线圈中的磁通量（优化：减少积分分段）
+         */
+        function calculateMagneticFlux(radius, zPos) {
+            let flux = 0;
+            // 优化：减少积分分段（径向20→15，角向20→10）
+            const radialSegments = 15;
+            const angleSegments = 10;
+            const dr = radius / radialSegments;
+            const dTheta = (2 * Math.PI) / angleSegments;
+            
+            for (let r = 0; r < radius; r += dr) {
+                // 利用轴对称，仅取theta=0，减少循环
+                const x = r * Math.cos(0);
+                const y = r * Math.sin(0);
+                const z = zPos;
+                
+                // 计算总磁场（励磁+涡流+磁化）
+                const B_excitation = calculateExcitationField(x, y, z);
+                const B_eddy = calculateEddyCurrentField(x, y, z);
+                const B_magnetization = calculateMagnetizationField(x, y, z);
+                const B_total = new THREE.Vector3()
+                    .addVectors(B_excitation, B_eddy)
+                    .add(B_magnetization);
+                
+                // 磁通量：垂直分量（Z轴）× 面积元
+                const B_normal = B_total.z; 
+                const areaElement = r * dr * dTheta;
+                flux += B_normal * areaElement;
+            }
+            
+            return flux;
+        }
+        
+        /**
+         * 计算感应电流（确保输出正常，单位转换为mA）
+         */
+        function calculateInducedCurrent() {
+            // 电动势 = 匝数 × 磁通量变化率（法拉第定律）
+            const emf = physicsParams.inductionTurns * Math.abs(simulationState.fluxRate);
+            // 感应电流 = 电动势 / 电阻（欧姆定律）
+            const current = emf / physicsParams.resistance;
+            // 直接返回安培（后续UI转换为mA）
+            return current;
+        }
+
+        // 5. 磁场可视化优化（核心：缩小箭头尺寸）
+        /**
+         * 缩小磁场箭头（优化：减小圆柱体/圆锥体尺寸）
+         */
+        function createFieldArrow(length, color) {
+            const group = new THREE.Group();
+            
+            // 箭头主体（圆柱体）：半径从0.005→0.003，长度比例不变
+            const cylinder = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.003, 0.003, length * 0.7, 8), // 优化：半径0.003
+                new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.8 })
+            );
+            cylinder.position.y = length * 0.7 / 2;
+            
+            // 箭头头部（圆锥体）：半径从0.012→0.008，长度比例不变
+            const cone = new THREE.Mesh(
+                new THREE.ConeGeometry(0.008, length * 0.3, 3), // 优化：半径0.008
+                new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.8 })
+            );
+            cone.position.y = length * 0.7 + length * 0.3 / 2;
+            
+            group.add(cylinder);
+            group.add(cone);
+            return group;
+        }
+        
+        /**
+         * 保持原可视化逻辑，仅箭头变小
+         */
+        function updateFieldVisualization() {
+            // 清除旧箭头
+            coreObjects.fieldArrows.forEach(arrow => scene.remove(arrow));
+            coreObjects.fieldArrows = [];
+            
+            const density = 5; // 保持原密度，不改变可视化密度
+            const size = 0.3;  
+            const step = size / (density - 1);
+            const arrowScale = 0.06; // 优化：箭头总长度从0.08→0.06，进一步缩小
+            
+            // 生成采样点并创建箭头（保持原逻辑）
+            for (let i = 0; i < density; i++) {
+                for (let j = 0; j < density; j++) {
+                    for (let k = 0; k < density; k++) {
+                        const x = -size/2 + i * step;
+                        const y = -size/2 + j * step;
+                        const z = -0.2 + k * step;
+                        
+                        // 励磁磁场（红色）
+                        const B_excitation = calculateExcitationField(x, y, z);
+                        if (B_excitation.length() > 1e-7) {
+                            const length = Math.min(arrowScale, B_excitation.length() * 1e5 * arrowScale);
+                            const arrow = createFieldArrow(length, 0xff3333);
+                            arrow.position.set(x, y, z);
+                            const dir = B_excitation.clone().normalize();
+                            const up = new THREE.Vector3(0, 1, 0);
+                            const axis = new THREE.Vector3().crossVectors(up, dir).normalize();
+                            const angle = Math.acos(up.dot(dir));
+                            arrow.setRotationFromAxisAngle(axis, angle);
+                            scene.add(arrow);
+                            coreObjects.fieldArrows.push(arrow);
+                        }
+                        
+                        // 涡流磁场（蓝色）
+                        const B_eddy = calculateEddyCurrentField(x, y, z);
+                        if (B_eddy.length() > 1e-7) {
+                            const length = Math.min(arrowScale, B_eddy.length() * 1e5 * arrowScale);
+                            const arrow = createFieldArrow(length, 0x3498db);
+                            arrow.position.set(x, y, z);
+                            const dir = B_eddy.clone().normalize();
+                            const up = new THREE.Vector3(0, 1, 0);
+                            const axis = new THREE.Vector3().crossVectors(up, dir).normalize();
+                            const angle = Math.acos(up.dot(dir));
+                            arrow.setRotationFromAxisAngle(axis, angle);
+                            scene.add(arrow);
+                            coreObjects.fieldArrows.push(arrow);
+                        }
+                        
+                        // 磁化磁场（绿色）
+                        const B_magnetization = calculateMagnetizationField(x, y, z);
+                        if (B_magnetization.length() > 1e-7) {
+                            const length = Math.min(arrowScale, B_magnetization.length() * 1e5 * arrowScale);
+                            const arrow = createFieldArrow(length, 0x2ecc71);
+                            arrow.position.set(x, y, z);
+                            const dir = B_magnetization.clone().normalize();
+                            const up = new THREE.Vector3(0, 1, 0);
+                            const axis = new THREE.Vector3().crossVectors(up, dir).normalize();
+                            const angle = Math.acos(up.dot(dir));
+                            arrow.setRotationFromAxisAngle(axis, angle);
+                            scene.add(arrow);
+                            coreObjects.fieldArrows.push(arrow);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. 图表与仿真控制（保持原逻辑，确保感应电流输出）
+        function initCharts() {
+            // 涡流电流图表（保持原逻辑）
+            const eddyCtx = document.getElementById('eddy-current-chart').getContext('2d');
+            charts.eddyCurrentChart = new Chart(eddyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '涡流电流 (mA)',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '时间 (s)' } },
+                        y: { title: { display: true, text: '电流 (mA)' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+            
+            // 磁通量图表（保持原逻辑）
+            const fluxCtx = document.getElementById('flux-chart').getContext('2d');
+            charts.fluxChart = new Chart(fluxCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '磁通量 (μWb)',
+                        data: [],
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '时间 (s)' } },
+                        y: { title: { display: true, text: '磁通量 (μWb)' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+        
+        function updateCharts() {
+            const time = simulationState.currentTime.toFixed(2);
+            // 感应电流转换为mA（核心：确保图表显示mA）
+            const eddyCurrent = (simulationState.inducedCurrent * 1000).toFixed(2);
+            const flux = (simulationState.magneticFlux * 1e6).toFixed(2); // 转换为μWb
+            
+            // 更新历史数据
+            simulationState.dataHistory.time.push(time);
+            simulationState.dataHistory.eddyCurrent.push(eddyCurrent);
+            simulationState.dataHistory.magneticFlux.push(flux);
+            
+            // 限制数据点数量
+            const maxPoints = 30;
+            if (simulationState.dataHistory.time.length > maxPoints) {
+                simulationState.dataHistory.time.shift();
+                simulationState.dataHistory.eddyCurrent.shift();
+                simulationState.dataHistory.magneticFlux.shift();
+            }
+            
+            // 更新图表
+            charts.eddyCurrentChart.data.labels = [...simulationState.dataHistory.time];
+            charts.eddyCurrentChart.data.datasets[0].data = [...simulationState.dataHistory.eddyCurrent];
+            charts.eddyCurrentChart.update();
+            
+            charts.fluxChart.data.labels = [...simulationState.dataHistory.time];
+            charts.fluxChart.data.datasets[0].data = [...simulationState.dataHistory.magneticFlux];
+            charts.fluxChart.update();
+        }
+
+        // 仿真控制（保持原逻辑）
+        function startSimulation() {
+            if (simulationState.isRunning) return;
+            
+            simulationState.isRunning = true;
+            simulationState.lastFrameTime = performance.now();
+            document.getElementById('start-sim').disabled = true;
+            document.getElementById('pause-sim').disabled = false;
+            statusElement.textContent = '仿真运行中';
+
+            // 启动动画循环
+            requestAnimationFrame(updateSimulation);
+        }
+
+        function pauseSimulation() {
+            simulationState.isRunning = false;
+            document.getElementById('start-sim').disabled = false;
+            document.getElementById('pause-sim').disabled = true;
+            statusElement.textContent = '仿真已暂停';
+        }
+
+        function resetSimulation() {
+            // 重置状态
+            simulationState.isRunning = false;
+            simulationState.currentTime = 0;
+            simulationState.diskPosition = -0.15;
+            simulationState.inducedCurrent = 0;
+            simulationState.magneticFlux = 0;
+            simulationState.fluxRate = 0; // 重置磁通量变化率
+            
+            // 重置历史数据
+            simulationState.dataHistory = {
+                time: [],
+                eddyCurrent: [],
+                magneticFlux: []
+            };
+            
+            // 重置图表
+            charts.eddyCurrentChart.data.labels = [];
+            charts.eddyCurrentChart.data.datasets[0].data = [];
+            charts.eddyCurrentChart.update();
+            
+            charts.fluxChart.data.labels = [];
+            charts.fluxChart.data.datasets[0].data = [];
+            charts.fluxChart.update();
+            
+            // 更新UI
+            updateUI();
+            document.getElementById('start-sim').disabled = false;
+            document.getElementById('pause-sim').disabled = true;
+            
+            // 重置物体位置
+            if (coreObjects.metalDisk) {
+                coreObjects.metalDisk.position.z = simulationState.diskPosition;
+            }
+            
+            // 重新计算磁场
+            updateFieldVisualization();
+            render();
+            
+            statusElement.textContent = '仿真已重置，点击"开始"运行';
+        }
+
+        // 仿真更新（保持原逻辑，确保感应电流计算）
+        function updateSimulation(timestamp) {
+            if (!simulationState.isRunning) return;
+            
+            // 计算时间增量（秒）
+            const deltaTime = (timestamp - simulationState.lastFrameTime) / 1000;
+            simulationState.lastFrameTime = timestamp;
+            
+            // 更新仿真时间
+            simulationState.currentTime += deltaTime;
+            
+            // 检查是否达到最大仿真时间
+            if (simulationState.currentTime >= simulationState.maxTime) {
+                simulationState.currentTime = simulationState.maxTime;
+                simulationState.isRunning = false;
+                document.getElementById('start-sim').disabled = false;
+                document.getElementById('pause-sim').disabled = true;
+                statusElement.textContent = '仿真结束（已完成2秒关键过程）';
+            }
+            
+            // 更新圆片位置（匀速运动）
+            simulationState.diskPosition = -0.15 + simulationState.diskSpeed * simulationState.currentTime;
+            if (coreObjects.metalDisk) {
+                coreObjects.metalDisk.position.z = simulationState.diskPosition;
+            }
+            
+            // 计算磁通量→变化率→感应电流（确保顺序正确）
+            simulationState.magneticFlux = calculateMagneticFlux(
+                physicsParams.inductionRadius, 
+                physicsParams.coilDistance
+            );
+            simulationState.fluxRate = calculateFluxChangeRate();
+            simulationState.inducedCurrent = calculateInducedCurrent(); // 关键：计算感应电流
+            
+            // 更新磁场可视化
+            updateFieldVisualization();
+            
+            // 更新UI（确保感应电流显示）
+            updateUI();
+            
+            // 更新图表
+            updateCharts();
+            
+            // 渲染场景
+            render();
+            
+            // 继续动画循环
+            if (simulationState.isRunning) {
+                requestAnimationFrame(updateSimulation);
+            }
+        }
+
+        // 更新UI（确保感应电流显示为mA）
+        function updateUI() {
+            // 更新时间显示
+            simTimeElement.textContent = simulationState.currentTime.toFixed(2) + ' s';
+            
+            // 更新位置显示
+            diskPosElement.textContent = simulationState.diskPosition.toFixed(2) + ' m';
+            
+            // 感应电流转换为mA（核心：确保UI显示mA）
+            inducedCurrentElement.textContent = (simulationState.inducedCurrent * 1000).toFixed(2) + ' mA';
+            
+            // 更新磁通量显示（转换为μWb）
+            magneticFluxElement.textContent = (simulationState.magneticFlux * 1e6).toFixed(2) + ' μWb';
+        }
+
+        // 渲染（保持原逻辑）
+        function render() {
+            renderer.render(scene, camera);
+        }
+
+        // 页面加载与事件绑定（保持原逻辑）
+        window.addEventListener('load', () => {
+            // 初始化图表
+            initCharts();
+            
+            // 初始化3D环境
+            init3DEnvironment();
+            // 初始化控制器
+            window.viewControls = new CustomViewControls(camera, renderer.domElement);
+            
+            // 绑定按钮事件
+            document.getElementById('start-sim').addEventListener('click', startSimulation);
+            document.getElementById('pause-sim').addEventListener('click', pauseSimulation);
+            document.getElementById('reset-sim').addEventListener('click', resetSimulation);
+            
+            // 参数更新事件（励磁线圈）
+            document.getElementById('excitation-current').addEventListener('change', (e) => {
+                physicsParams.excitationCurrent = parseFloat(e.target.value);
+                resetSimulation();
+            });
+            
+            document.getElementById('coil-radius').addEventListener('change', (e) => {
+                physicsParams.coilRadius = parseFloat(e.target.value);
+                createExcitationCoil(physicsParams.coilRadius);
+                resetSimulation();
+            });
+            
+            // 参数更新事件（感应线圈）
+            document.getElementById('induction-radius').addEventListener('change', (e) => {
+                physicsParams.inductionRadius = parseFloat(e.target.value);
+                createInductionCoil(physicsParams.inductionRadius, physicsParams.coilDistance);
+                resetSimulation();
+            });
+            
+            document.getElementById('coil-distance').addEventListener('change', (e) => {
+                physicsParams.coilDistance = parseFloat(e.target.value);
+                createInductionCoil(physicsParams.inductionRadius, physicsParams.coilDistance);
+                resetSimulation();
+            });
+            
+            // 参数更新事件（金属圆片）
+            document.getElementById('disk-speed').addEventListener('change', (e) => {
+                simulationState.diskSpeed = parseFloat(e.target.value);
+            });
+            
+            document.getElementById('disk-radius').addEventListener('change', (e) => {
+                physicsParams.diskRadius = parseFloat(e.target.value);
+                createMetalDisk(physicsParams.diskRadius);
+                resetSimulation();
+            });
+            
+            document.getElementById('disk-conductivity').addEventListener('change', (e) => {
+                physicsParams.diskConductivity = parseFloat(e.target.value) * 1e7;
+                resetSimulation();
+            });
+            
+            document.getElementById('disk-permeability').addEventListener('change', (e) => {
+                physicsParams.diskPermeability = parseFloat(e.target.value);
+                resetSimulation();
+            });
+        });
+    </script>
+</body>
+</html>
