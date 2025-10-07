@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>伊辛模型模拟与可视化（修复版）</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        spinUp: '#EF4444',    // 自旋向上（+1）的颜色：红色
+                        spinDown: '#3B82F6',  // 自旋向下（-1）的颜色：蓝色
+                        primary: '#8B5CF6',   // 主色调：紫色
+                        secondary: '#10B981', // 辅助色：绿色
+                        dark: '#0F172A',
+                        light: '#F1F5F9'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .spin-cell {
+                transition: background-color 0.2s ease, transform 0.1s ease;
+            }
+            .spin-cell:hover {
+                transform: scale(1.05);
+            }
+            .control-panel {
+                background-color: rgba(30, 41, 59, 0.8);
+                backdrop-filter: blur(8px);
+            }
+            .visualization-box {
+                background-color: rgba(30, 41, 59, 0.8);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-dark to-slate-800 text-light min-h-screen p-4 md:p-6">
+    <header class="container mx-auto mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-primary to-spinUp">
+            伊辛模型 (Ising Model) 模拟
+        </h1>
+        <p class="text-center text-slate-300 mt-3 max-w-3xl mx-auto">
+            直观展示磁性材料从有序到无序的相变过程
+        </p>
+    </header>
+
+    <main class="container mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 左侧：控制面板 -->
+        <div class="lg:col-span-1 space-y-6">
+            <!-- 模型控制 -->
+            <div class="control-panel rounded-xl p-5 shadow-lg border border-slate-700">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <i class="fa fa-sliders text-primary mr-2"></i> 模型控制
+                </h2>
+                
+                <!-- 温度控制 -->
+                <div class="space-y-5">
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-slate-300">温度 (T)</label>
+                            <span id="temp-value" class="font-mono text-primary">2.0</span>
+                        </div>
+                        <input type="range" id="temperature" min="0.1" max="5" step="0.1" value="2.0"
+                               class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary">
+                        <div class="flex justify-between text-xs text-slate-500 mt-1">
+                            <span>低温 (有序)</span>
+                            <span>居里点 (~2.27)</span>
+                            <span>高温 (无序)</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 外磁场控制 -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-slate-300">外磁场 (H)</label>
+                            <span id="field-value" class="font-mono text-primary">0.0</span>
+                        </div>
+                        <input type="range" id="magnetic-field" min="-2" max="2" step="0.1" value="0.0"
+                               class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary">
+                    </div>
+                    
+                    <!-- 网格大小 -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-slate-300">网格大小</label>
+                            <span id="size-value" class="font-mono text-primary">20×20</span>
+                        </div>
+                        <select id="grid-size" class="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-2 text-light focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="10">10×10 (大格子)</option>
+                            <option value="20" selected>20×20 (中等)</option>
+                            <option value="30">30×30 (小格子)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 控制按钮 -->
+                    <div class="flex gap-3 mt-2">
+                        <button id="start-btn" class="flex-1 bg-primary hover:bg-primary/80 px-4 py-2 rounded text-center transition-colors">
+                            <i class="fa fa-play mr-1"></i> 开始
+                        </button>
+                        <button id="pause-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-center transition-colors hidden">
+                            <i class="fa fa-pause mr-1"></i> 暂停
+                        </button>
+                        <button id="reset-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-center transition-colors">
+                            <i class="fa fa-refresh mr-1"></i> 重置
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 系统状态 -->
+            <div class="control-panel rounded-xl p-5 shadow-lg border border-slate-700">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <i class="fa fa-dashboard text-primary mr-2"></i> 系统状态
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                        <div class="text-xs text-slate-400 mb-1">平均磁化强度</div>
+                        <div id="magnetization" class="text-xl font-bold text-spinUp">0.00</div>
+                        <div class="text-xs text-slate-500 mt-1">越接近1越有序</div>
+                    </div>
+                    
+                    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                        <div class="text-xs text-slate-400 mb-1">平均能量</div>
+                        <div id="energy" class="text-xl font-bold text-primary">-0.00</div>
+                        <div class="text-xs text-slate-500 mt-1">越低越稳定</div>
+                    </div>
+                    
+                    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                        <div class="text-xs text-slate-400 mb-1">模拟步数</div>
+                        <div id="steps" class="text-xl font-bold text-secondary">0</div>
+                    </div>
+                    
+                    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                        <div class="text-xs text-slate-400 mb-1">当前状态</div>
+                        <div id="status" class="text-xl font-bold text-slate-300">就绪</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧：可视化与解释 -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- 自旋网格可视化 - 重点修复区域 -->
+            <div class="visualization-box rounded-xl p-5 shadow-lg border border-slate-700">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <i class="fa fa-th text-primary mr-2"></i> 自旋系统可视化
+                    <span class="ml-2 text-sm font-normal text-slate-400">(点击格子可手动翻转)</span>
+                </h2>
+                
+                <!-- 自旋网格容器 - 确保显示的关键区域 -->
+                <div class="flex justify-center mb-4">
+                    <div id="ising-grid" class="grid gap-[1px] bg-slate-700 p-1 rounded-md" style="min-height: 200px; min-width: 200px;">
+                        <!-- 自旋网格将在这里动态生成 -->
+                        <div class="flex items-center justify-center text-slate-500 h-40">
+                            加载中...
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-center gap-6 text-sm">
+                    <div class="flex items-center">
+                        <div class="w-4 h-4 bg-spinUp rounded-sm mr-2"></div>
+                        <span>自旋向上 (+1)</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-4 h-4 bg-spinDown rounded-sm mr-2"></div>
+                        <span>自旋向下 (-1)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 相变演示指南 -->
+            <div class="visualization-box rounded-xl p-5 shadow-lg border border-slate-700">
+                <h2 class="text-xl font-semibold mb-3 flex items-center">
+                    <i class="fa fa-lightbulb-o text-primary mr-2"></i> 如何观察相变现象
+                </h2>
+                
+                <div class="space-y-3 text-slate-300 text-sm">
+                    <div class="flex items-start">
+                        <span class="text-secondary mr-2">1.</span>
+                        <p>点击"开始"按钮启动模拟</p>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="text-secondary mr-2">2.</span>
+                        <p>将温度调到<span class="font-semibold">0.5</span>（低温），观察红色和蓝色如何形成大面积连续区域（有序状态）</p>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="text-secondary mr-2">3.</span>
+                        <p>慢慢将温度调到<span class="font-semibold">3.0</span>（超过临界温度），观察有序结构如何突然变成混乱状态</p>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="text-secondary mr-2">4.</span>
+                        <p>尝试调整外磁场，观察它如何"迫使"自旋统一方向（类似磁铁被磁化）</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 p-3 bg-slate-900/60 rounded-lg border border-slate-700">
+                    <p class="text-sm text-slate-300">
+                        <span class="text-primary font-medium">学习要点：</span>
+                        这个模拟展示了"相变"现象——当温度超过某个临界值时，系统会从有序状态突然变成无序状态，这与现实中磁铁加热到一定温度会失去磁性的现象完全一致。
+                    </p>
+                </div>
+            </div>
+            
+            <!-- 统计图表 -->
+            <div class="visualization-box rounded-xl p-5 shadow-lg border border-slate-700">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <i class="fa fa-line-chart text-primary mr-2"></i> 系统变化趋势
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="h-64">
+                        <canvas id="magnetization-chart"></canvas>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="energy-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        class IsingModel {
+            constructor() {
+                // 模型参数 - 确保网格大小适中，便于显示
+                this.size = 20;           // 网格大小
+                this.temperature = 2.0;   // 温度 (临界温度 ~2.27)
+                this.field = 0.0;         // 外磁场
+                this.beta = 1 / this.temperature; // 玻尔兹曼因子的倒数
+                
+                // 模拟状态
+                this.spins = [];          // 自旋网格，值为+1或-1
+                this.running = false;     // 模拟是否运行
+                this.steps = 0;           // 蒙特卡洛步数
+                this.simulationSpeed = 5; // 模拟速度
+                
+                // 统计数据
+                this.magnetizationHistory = [];
+                this.energyHistory = [];
+                this.maxHistoryPoints = 100;
+                
+                // 绑定DOM元素
+                this.bindElements();
+                
+                // 初始化图表
+                this.initCharts();
+                
+                // 初始化自旋网格 - 确保执行
+                this.initializeSpins();
+                this.updateGridDisplay(); // 立即更新网格显示
+                this.updateStats();
+                
+                // 绑定事件
+                this.bindEvents();
+                
+                // 确保网格正确显示的额外检查
+                setTimeout(() => {
+                    this.updateGridDisplay();
+                }, 100);
+            }
+            
+            // 绑定DOM元素
+            bindElements() {
+                this.gridElement = document.getElementById('ising-grid');
+                this.tempSlider = document.getElementById('temperature');
+                this.tempValue = document.getElementById('temp-value');
+                this.fieldSlider = document.getElementById('magnetic-field');
+                this.fieldValue = document.getElementById('field-value');
+                this.sizeSelect = document.getElementById('grid-size');
+                this.sizeValue = document.getElementById('size-value');
+                this.startBtn = document.getElementById('start-btn');
+                this.pauseBtn = document.getElementById('pause-btn');
+                this.resetBtn = document.getElementById('reset-btn');
+                this.magnetizationDisplay = document.getElementById('magnetization');
+                this.energyDisplay = document.getElementById('energy');
+                this.stepsDisplay = document.getElementById('steps');
+                this.statusDisplay = document.getElementById('status');
+            }
+            
+            // 初始化图表
+            initCharts() {
+                // 磁化强度图表
+                this.magnetizationChart = new Chart(
+                    document.getElementById('magnetization-chart'),
+                    {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [{
+                                label: '平均磁化强度',
+                                data: [],
+                                borderColor: '#EF4444',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                borderWidth: 2,
+                                tension: 0.3,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: { title: { display: true, text: '步数' }, min: 0 },
+                                y: { title: { display: true, text: '磁化强度' }, min: -1, max: 1 }
+                            }
+                        }
+                    }
+                );
+                
+                // 能量图表
+                this.energyChart = new Chart(
+                    document.getElementById('energy-chart'),
+                    {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [{
+                                label: '平均能量',
+                                data: [],
+                                borderColor: '#8B5CF6',
+                                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                borderWidth: 2,
+                                tension: 0.3,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: { title: { display: true, text: '步数' }, min: 0 },
+                                y: { title: { display: true, text: '能量' } }
+                            }
+                        }
+                    }
+                );
+            }
+            
+            // 初始化自旋网格 - 确保正确创建
+            initializeSpins() {
+                this.spins = [];
+                for (let i = 0; i < this.size; i++) {
+                    this.spins[i] = [];
+                    for (let j = 0; j < this.size; j++) {
+                        // 随机初始化为+1或-1
+                        this.spins[i][j] = Math.random() < 0.5 ? 1 : -1;
+                    }
+                }
+                this.steps = 0;
+                this.magnetizationHistory = [];
+                this.energyHistory = [];
+            }
+            
+            // 更新网格显示 - 重点修复部分
+            updateGridDisplay() {
+                // 清除加载提示
+                this.gridElement.innerHTML = '';
+                
+                // 根据屏幕尺寸动态计算单元格大小，确保可见
+                const containerWidth = this.gridElement.clientWidth;
+                const cellSize = Math.max(5, Math.floor((containerWidth - this.size) / this.size));
+                
+                // 设置网格样式
+                this.gridElement.style.gridTemplateColumns = `repeat(${this.size}, ${cellSize}px)`;
+                
+                // 创建新的网格单元
+                for (let i = 0; i < this.size; i++) {
+                    for (let j = 0; j < this.size; j++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'spin-cell rounded-sm';
+                        cell.style.width = `${cellSize}px`;
+                        cell.style.height = `${cellSize}px`;
+                        
+                        // 根据自旋方向设置颜色
+                        if (this.spins[i][j] === 1) {
+                            cell.classList.add('bg-spinUp');
+                        } else {
+                            cell.classList.add('bg-spinDown');
+                        }
+                        
+                        // 允许点击翻转自旋
+                        const _this = this;
+                        cell.addEventListener('click', function() {
+                            _this.spins[i][j] *= -1;
+                            _this.updateGridDisplay();
+                            _this.updateStats();
+                        });
+                        
+                        this.gridElement.appendChild(cell);
+                    }
+                }
+            }
+            
+            // 计算系统能量
+            calculateEnergy() {
+                let energy = 0;
+                for (let i = 0; i < this.size; i++) {
+                    for (let j = 0; j < this.size; j++) {
+                        const s = this.spins[i][j];
+                        // 相邻自旋（周期性边界条件）
+                        const neighbors = [
+                            this.spins[(i + 1) % this.size][j],
+                            this.spins[(i - 1 + this.size) % this.size][j],
+                            this.spins[i][(j + 1) % this.size],
+                            this.spins[i][(j - 1 + this.size) % this.size]
+                        ];
+                        // 相互作用能量
+                        energy -= s * neighbors.reduce((a, b) => a + b, 0);
+                        // 外磁场能量
+                        energy -= this.field * s;
+                    }
+                }
+                return energy / (this.size * this.size);
+            }
+            
+            // 计算磁化强度
+            calculateMagnetization() {
+                let total = 0;
+                for (let i = 0; i < this.size; i++) {
+                    for (let j = 0; j < this.size; j++) {
+                        total += this.spins[i][j];
+                    }
+                }
+                return Math.abs(total) / (this.size * this.size);
+            }
+            
+            // 更新统计数据
+            updateStats() {
+                const magnetization = this.calculateMagnetization();
+                const energy = this.calculateEnergy();
+                
+                // 更新显示
+                this.magnetizationDisplay.textContent = magnetization.toFixed(2);
+                this.energyDisplay.textContent = energy.toFixed(2);
+                this.stepsDisplay.textContent = this.steps;
+                
+                // 记录历史数据
+                this.magnetizationHistory.push(magnetization);
+                this.energyHistory.push(energy);
+                
+                // 限制历史数据长度
+                if (this.magnetizationHistory.length > this.maxHistoryPoints) {
+                    this.magnetizationHistory.shift();
+                    this.energyHistory.shift();
+                }
+                
+                // 更新图表
+                this.updateCharts();
+            }
+            
+            // 更新图表数据
+            updateCharts() {
+                const labels = Array.from({ length: this.magnetizationHistory.length }, 
+                    (_, i) => this.steps - this.magnetizationHistory.length + i + 1);
+                
+                // 更新磁化强度图表
+                this.magnetizationChart.data.labels = labels;
+                this.magnetizationChart.data.datasets[0].data = this.magnetizationHistory;
+                this.magnetizationChart.update();
+                
+                // 更新能量图表
+                this.energyChart.data.labels = labels;
+                this.energyChart.data.datasets[0].data = this.energyHistory;
+                this.energyChart.update();
+            }
+            
+            // 执行一步蒙特卡洛模拟
+            stepSimulation() {
+                // 随机选择一个自旋
+                const i = Math.floor(Math.random() * this.size);
+                const j = Math.floor(Math.random() * this.size);
+                
+                // 计算翻转该自旋的能量变化
+                const deltaE = this.calculateEnergyChange(i, j);
+                
+                // Metropolis准则
+                if (deltaE <= 0 || Math.random() < Math.exp(-this.beta * deltaE)) {
+                    this.spins[i][j] *= -1; // 翻转自旋
+                }
+                
+                // 定期更新显示
+                if (this.steps % (this.size * this.size / 2) === 0) {
+                    this.updateStats();
+                    this.updateGridDisplay();
+                }
+                
+                this.steps++;
+            }
+            
+            // 计算能量变化
+            calculateEnergyChange(i, j) {
+                const s = this.spins[i][j];
+                const neighborsSum = 
+                    this.spins[(i + 1) % this.size][j] +
+                    this.spins[(i - 1 + this.size) % this.size][j] +
+                    this.spins[i][(j + 1) % this.size] +
+                    this.spins[i][(j - 1 + this.size) % this.size];
+                
+                return 2 * s * (neighborsSum + this.field);
+            }
+            
+            // 运行模拟循环
+            runSimulation() {
+                if (!this.running) return;
+                
+                // 控制模拟速度
+                const stepsPerFrame = Math.max(1, this.simulationSpeed * this.simulationSpeed);
+                for (let s = 0; s < stepsPerFrame; s++) {
+                    this.stepSimulation();
+                }
+                
+                requestAnimationFrame(() => this.runSimulation());
+            }
+            
+            // 开始模拟
+            startSimulation() {
+                if (!this.running) {
+                    this.running = true;
+                    this.startBtn.classList.add('hidden');
+                    this.pauseBtn.classList.remove('hidden');
+                    this.statusDisplay.textContent = '运行中';
+                    this.statusDisplay.className = 'text-xl font-bold text-secondary';
+                    this.runSimulation();
+                }
+            }
+            
+            // 暂停模拟
+            pauseSimulation() {
+                this.running = false;
+                this.startBtn.classList.remove('hidden');
+                this.pauseBtn.classList.add('hidden');
+                this.statusDisplay.textContent = '已暂停';
+                this.statusDisplay.className = 'text-xl font-bold text-slate-300';
+            }
+            
+            // 重置模拟
+            resetSimulation() {
+                const wasRunning = this.running;
+                this.pauseSimulation();
+                this.initializeSpins();
+                this.updateGridDisplay();
+                this.updateStats();
+                
+                if (wasRunning) {
+                    this.startSimulation();
+                }
+            }
+            
+            // 绑定事件处理
+            bindEvents() {
+                // 按钮事件
+                this.startBtn.addEventListener('click', () => this.startSimulation());
+                this.pauseBtn.addEventListener('click', () => this.pauseSimulation());
+                this.resetBtn.addEventListener('click', () => this.resetSimulation());
+                
+                // 温度滑块事件
+                this.tempSlider.addEventListener('input', (e) => {
+                    this.temperature = parseFloat(e.target.value);
+                    this.beta = 1 / this.temperature;
+                    this.tempValue.textContent = this.temperature.toFixed(1);
+                });
+                
+                // 磁场滑块事件
+                this.fieldSlider.addEventListener('input', (e) => {
+                    this.field = parseFloat(e.target.value);
+                    this.fieldValue.textContent = this.field.toFixed(1);
+                });
+                
+                // 网格大小选择事件
+                this.sizeSelect.addEventListener('change', (e) => {
+                    const wasRunning = this.running;
+                    this.pauseSimulation();
+                    
+                    this.size = parseInt(e.target.value);
+                    this.sizeValue.textContent = `${this.size}×${this.size}`;
+                    
+                    this.initializeSpins();
+                    this.updateGridDisplay();
+                    this.updateStats();
+                    
+                    if (wasRunning) {
+                        this.startSimulation();
+                    }
+                });
+                
+                // 窗口大小变化时重新调整网格
+                window.addEventListener('resize', () => {
+                    this.updateGridDisplay();
+                });
+            }
+        }
+        
+        // 页面加载完成后立即初始化，确保网格显示
+        document.addEventListener('DOMContentLoaded', () => {
+            // 确保DOM完全加载后再初始化
+            setTimeout(() => {
+                const isingModel = new IsingModel();
+            }, 100);
+        });
+    </script>
+</body>
+</html>
+    
