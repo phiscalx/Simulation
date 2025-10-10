@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>双组线圈 + 小圆片磁场 + 感应电流</title>
+<style>
+body { margin:0; overflow:hidden; background:#202020; font-family:sans-serif; }
+canvas { display:block; }
+#controls {
+  position: absolute; top: 10px; left: 10px;
+  background: rgba(40,40,40,0.9); padding: 15px;
+  border-radius: 8px; color: #fff; font-size: 14px;
+  width: 300px;
+}
+#controls label { display:block; margin:8px 0 3px; }
+#controls input[type=range] { width: 160px; margin-left:5px; vertical-align: middle; }
+#controls span { display:inline-block; width:30px; text-align:right; margin-left:5px; }
+#controls button { margin-top:8px; width:100%; padding:4px; border:none; border-radius:4px; background:#555; color:#fff; cursor:pointer;}
+#controls button:hover { background:#777; }
+#chartContainer { position:absolute; right:10px; top:10px; width:500px; height:250px; background:rgba(255,255,255,0.9); border-radius:8px; padding:10px;}
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <label>励磁线圈半径: <input type="range" id="excRadius" min="0.5" max="5" step="0.1" value="2"><span id="excRadiusVal">2</span></label>
+  <label>感应线圈半径: <input type="range" id="indRadius" min="0.5" max="5" step="0.1" value="1.6"><span id="indRadiusVal">1.6</span></label>
+  <label>组内距离: <input type="range" id="componentSpacing" min="0.5" max="5" step="0.1" value="3"><span id="componentSpacingVal">3</span></label>
+  <label>组间距: <input type="range" id="groupSpacing" min="1" max="10" step="0.1" value="6"><span id="groupSpacingVal">6</span></label>
+  <label>电流大小: <input type="range" id="current" min="0.1" max="5" step="0.1" value="1"><span id="currentVal">1</span></label>
+  <label>积分分段: <input type="range" id="segments" min="10" max="500" step="10" value="50"><span id="segmentsVal">50</span></label>
+  <label>磁场箭头间距: <input type="range" id="spaceStep" min="1" max="5" step="0.5" value="2"><span id="spaceStepVal">2</span></label>
+  <label>小圆片速度: <input type="range" id="discSpeed" min="0.01" max="0.5" step="0.01" value="0.05"><span id="discSpeedVal">0.05</span></label>
+  <label>小圆片磁化: <input type="range" id="discMag" min="0.1" max="5" step="0.1" value="1"><span id="discMagVal">1</span></label>
+  <button id="resetBtn">重置小圆片位置</button>
+</div>
+
+<div id="chartContainer">
+  <canvas id="currentChart"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
+camera.position.set(20,20,25);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0x404040));
+const dirLight = new THREE.DirectionalLight(0xffffff,1);
+dirLight.position.set(10,10,10);
+scene.add(dirLight);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.GridHelper(30,30));
+scene.add(new THREE.AxesHelper(5));
+
+let coilMeshes = [];
+let arrowGroups = [];
+
+// ====== 创建线圈 ======
+function createCoil(position,radius,color,axis){
+    const geo = new THREE.TorusGeometry(radius,0.1,16,100);
+    const mat = new THREE.MeshStandardMaterial({color});
+    const mesh = new THREE.Mesh(geo,mat);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), axis.clone().normalize());
+    mesh.quaternion.copy(q);
+    mesh.position.copy(position);
+    scene.add(mesh);
+    mesh.axisQuaternion = q;
+    mesh.radius = radius;
+    mesh.positionVec = position.clone();
+    return mesh;
+}
+
+// ====== 数值积分计算线圈磁场 ======
+function computeMagField(coil,point,segments,current){
+    const mu0 = 4*Math.PI*1e-7;
+    let B = new THREE.Vector3(0,0,0);
+    for(let i=0;i<segments;i++){
+        const theta = 2*Math.PI*i/segments;
+        const nextTheta = 2*Math.PI*(i+1)/segments;
+        let p1 = new THREE.Vector3(Math.cos(theta)*coil.radius, Math.sin(theta)*coil.radius,0);
+        let p2 = new THREE.Vector3(Math.cos(nextTheta)*coil.radius, Math.sin(nextTheta)*coil.radius,0);
+        p1.applyQuaternion(coil.axisQuaternion).add(coil.positionVec);
+        p2.applyQuaternion(coil.axisQuaternion).add(coil.positionVec);
+        const dl = new THREE.Vector3().subVectors(p2,p1);
+        const r = new THREE.Vector3().subVectors(point,p1);
+        const len = r.length();
+        if(len>1e-6){
+            const dB = dl.clone().cross(r).multiplyScalar(mu0*current/(4*Math.PI*Math.pow(len,3)));
+            B.add(dB);
+        }
+    }
+    return B;
+}
+
+// ====== 小圆片磁场 ======
+let disc = null;
+let discPos = new THREE.Vector3(0,0,-5);
+let discVel = new THREE.Vector3(0,0,0.05);
+let discMagnetization = 1;
+function computeDiscField(point){
+    const mu0 = 4*Math.PI*1e-7;
+    const r = point.clone().sub(discPos);
+    const rLen = r.length();
+    if(rLen<0.01) return new THREE.Vector3(0,0,0);
+    const m = new THREE.Vector3(0,0,discMagnetization);
+    return r.clone().multiplyScalar(3*r.dot(m))
+        .sub(m.clone().multiplyScalar(rLen*rLen))
+        .multiplyScalar(mu0/(4*Math.PI*Math.pow(rLen,5)));
+}
+
+// ====== 创建场景 ======
+function createScene(params){
+    coilMeshes.forEach(c=>scene.remove(c));
+    coilMeshes=[];
+    arrowGroups.forEach(a=>scene.remove(a));
+    arrowGroups=[];
+
+    const axis = new THREE.Vector3(0,0,1);
+    const basePos = new THREE.Vector3(0,0,0);
+    const offset = axis.clone().multiplyScalar(params.groupSpacing);
+
+    const exc1 = createCoil(basePos.clone().sub(axis.clone().multiplyScalar(params.componentSpacing/2)), params.excRadius, 0xff0000, axis);
+    const exc2 = createCoil(basePos.clone().add(offset).sub(axis.clone().multiplyScalar(params.componentSpacing/2)), params.excRadius, 0xff0000, axis);
+    const ind1 = createCoil(basePos.clone().add(axis.clone().multiplyScalar(params.componentSpacing/2)), params.indRadius, 0x00aaff, axis);
+    const ind2 = createCoil(basePos.clone().add(offset).add(axis.clone().multiplyScalar(params.componentSpacing/2)), params.indRadius, 0x00aaff, axis);
+
+    coilMeshes.push(exc1,exc2,ind1,ind2);
+
+    // 小圆片
+    if(disc) scene.remove(disc);
+    const geo = new THREE.CylinderGeometry(params.indRadius*0.4, params.indRadius*0.4, 0.2, 32);
+    const mat = new THREE.MeshStandardMaterial({color:0x00ff00});
+    disc = new THREE.Mesh(geo,mat);
+    disc.rotation.x = Math.PI/2;
+    discPos.set(0,0,-5);
+    disc.position.copy(discPos);
+    discVel.set(0,0,params.discSpeed);
+    discMagnetization = params.discMag;
+    scene.add(disc);
+
+    // 空间箭头显示磁场 (只励磁线圈+小圆片)
+    const minX=-10,maxX=10,minY=-10,maxY=10,minZ=-10,maxZ=10;
+    for(let x=minX;x<=maxX;x+=params.spaceStep){
+        for(let y=minY;y<=maxY;y+=params.spaceStep){
+            for(let z=minZ;z<=maxZ;z+=params.spaceStep){
+                const pt = new THREE.Vector3(x,y,z);
+                let B_total = new THREE.Vector3(0,0,0);
+                [exc1,exc2].forEach(c=>{ B_total.add(computeMagField(c, pt, params.segments, params.current)); });
+                B_total.add(computeDiscField(pt));
+                const len = B_total.length()*1e6;
+                if(len>0.001){
+                    const arrow = new THREE.ArrowHelper(B_total.clone().normalize(), pt, len, 0xffff00);
+                    arrow.positionVec = pt.clone();
+                    scene.add(arrow);
+                    arrowGroups.push(arrow);
+                }
+            }
+        }
+    }
+
+    return [exc1,exc2,ind1,ind2];
+}
+
+// ====== 获取参数 ======
+function getParams(){
+    return {
+        excRadius: parseFloat(document.getElementById('excRadius').value),
+        indRadius: parseFloat(document.getElementById('indRadius').value),
+        componentSpacing: parseFloat(document.getElementById('componentSpacing').value),
+        groupSpacing: parseFloat(document.getElementById('groupSpacing').value),
+        current: parseFloat(document.getElementById('current').value),
+        segments: parseInt(document.getElementById('segments').value),
+        spaceStep: parseFloat(document.getElementById('spaceStep').value),
+        discSpeed: parseFloat(document.getElementById('discSpeed').value),
+        discMag: parseFloat(document.getElementById('discMag').value)
+    };
+}
+
+// ====== 初始化 ======
+let [exc1,exc2,ind1,ind2] = createScene(getParams());
+
+// ====== 滑条事件 ======
+['excRadius','indRadius','componentSpacing','groupSpacing','current','segments','spaceStep','discSpeed','discMag'].forEach(id=>{
+    const slider = document.getElementById(id);
+    const valSpan = document.getElementById(id+'Val');
+    slider.addEventListener('input',()=>{
+        valSpan.innerText = slider.value;
+        [exc1,exc2,ind1,ind2] = createScene(getParams());
+    });
+});
+
+// ====== 重置 ======
+document.getElementById('resetBtn').addEventListener('click',()=>{
+    discPos.set(0,0,-5);
+    disc.position.copy(discPos);
+});
+
+// ====== 感应电流曲线 ======
+const ctx = document.getElementById('currentChart').getContext('2d');
+const currentChart = new Chart(ctx, {
+    type:'line',
+    data:{labels:[], datasets:[
+        {label:'感应电流1', data:[], borderColor:'red', fill:false, tension:0.1},
+        {label:'感应电流2', data:[], borderColor:'blue', fill:false, tension:0.1}
+    ]},
+    options:{animation:false, scales:{x:{title:{display:true,text:'时间步'}}, y:{title:{display:true,text:'电流(A)'}}}}
+});
+
+// 积分磁通量
+function computeFlux(coil){
+    const normal = new THREE.Vector3(0,0,1).applyQuaternion(coil.axisQuaternion);
+    let flux = 0;
+    const radialSegments = 8;
+    const angularSegments = 16;
+    for(let i=0;i<radialSegments;i++){
+        const r = coil.radius*(i+0.5)/radialSegments;
+        const dr = coil.radius/radialSegments;
+        for(let j=0;j<angularSegments;j++){
+            const theta = 2*Math.PI*j/angularSegments;
+            const dtheta = 2*Math.PI/angularSegments;
+            let pt = new THREE.Vector3(r*Math.cos(theta), r*Math.sin(theta),0);
+            pt.applyQuaternion(coil.axisQuaternion).add(coil.positionVec);
+            const B = computeDiscField(pt);
+            const dS = r*dr*dtheta;
+            flux += B.dot(normal)*dS;
+        }
+    }
+    return flux;
+}
+
+// ====== 动画 ======
+let lastFlux1 = computeFlux(ind1);
+let lastFlux2 = computeFlux(ind2);
+let timeStep = 0;
+function animate(){
+    requestAnimationFrame(animate);
+
+    coilMeshes.forEach((c,i)=>{ if(i<2) c.rotation.z+=0.02; });
+
+    discPos.add(discVel);
+    disc.position.copy(discPos);
+    if(discPos.z>10) discPos.z=-5;
+
+    arrowGroups.forEach(a=>{
+        let B_total = new THREE.Vector3(0,0,0);
+        [exc1,exc2].forEach(c=>{ B_total.add(computeMagField(c,a.positionVec,getParams().segments,getParams().current)); });
+        B_total.add(computeDiscField(a.positionVec));
+        a.setDirection(B_total.clone().normalize());
+        a.setLength(B_total.length()*1e6);
+    });
+
+    const flux1 = computeFlux(ind1);
+    const flux2 = computeFlux(ind2);
+    const current1 = -(flux1 - lastFlux1)/0.05;
+    const current2 = -(flux2 - lastFlux2)/0.05;
+    lastFlux1 = flux1;
+    lastFlux2 = flux2;
+
+    currentChart.data.labels.push(timeStep);
+    currentChart.data.datasets[0].data.push(current1);
+    currentChart.data.datasets[1].data.push(current2);
+    if(currentChart.data.labels.length>200){
+        currentChart.data.labels.shift();
+        currentChart.data.datasets[0].data.shift();
+        currentChart.data.datasets[1].data.shift();
+    }
+    currentChart.update();
+    timeStep++;
+
+    controls.update();
+    renderer.render(scene,camera);
+}
+animate();
+
+// ====== 窗口自适应 ======
+window.addEventListener("resize",()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+});
+</script>
+</body>
+</html>
